@@ -15,33 +15,25 @@
  * limitations under the License.
  */
 
-package org.apache.spark.unsafe.map;
+package org.apache.spark.sql.catalyst.plans.logical
 
-import org.apache.spark.unsafe.array.ByteArrayMethods;
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeSet, Expression}
 
 /**
- * Interface that defines how we can grow the size of a hash map when it is over a threshold.
+ * FlatMap groups using an udf: pandas.Dataframe -> pandas.DataFrame.
+ * This is used by DataFrame.groupby().apply().
  */
-public interface HashMapGrowthStrategy {
-
-  int nextCapacity(int currentCapacity);
-
+case class FlatMapGroupsInPandas(
+  groupingAttributes: Seq[Attribute],
+  functionExpr: Expression,
+  output: Seq[Attribute],
+  child: LogicalPlan) extends UnaryNode {
   /**
-   * Double the size of the hash map every time.
+   * This is needed because output attributes are considered `references` when
+   * passed through the constructor.
+   *
+   * Without this, catalyst will complain that output attributes are missing
+   * from the input.
    */
-  HashMapGrowthStrategy DOUBLING = new Doubling();
-
-  class Doubling implements HashMapGrowthStrategy {
-
-    private static final int ARRAY_MAX = ByteArrayMethods.MAX_ROUNDED_ARRAY_LENGTH;
-
-    @Override
-    public int nextCapacity(int currentCapacity) {
-      assert (currentCapacity > 0);
-      int doubleCapacity = currentCapacity * 2;
-      // Guard against overflow
-      return (doubleCapacity > 0 && doubleCapacity <= ARRAY_MAX) ? doubleCapacity : ARRAY_MAX;
-    }
-  }
-
+  override val producedAttributes = AttributeSet(output)
 }
