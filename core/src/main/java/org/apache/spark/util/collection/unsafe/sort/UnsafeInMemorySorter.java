@@ -24,6 +24,7 @@ import org.apache.avro.reflect.Nullable;
 
 import org.apache.spark.TaskContext;
 import org.apache.spark.memory.MemoryConsumer;
+import org.apache.spark.memory.SparkOutOfMemoryError;
 import org.apache.spark.memory.TaskMemoryManager;
 import org.apache.spark.unsafe.Platform;
 import org.apache.spark.unsafe.UnsafeAlignedOffset;
@@ -172,10 +173,11 @@ public final class UnsafeInMemorySorter {
   public void reset() {
     if (consumer != null) {
       consumer.freeArray(array);
-      // the call to consumer.allocateArray may trigger a spill
-      // which in turn access this instance and eventually re-enter this method and try to free the array again.
-      // by setting the array to null and its length to 0 we effectively make the spill code-path a no-op.
-      // setting the array to null also indicates that it has already been de-allocated which prevents a double de-allocation in free().
+      // the call to consumer.allocateArray may trigger a spill which in turn access this instance
+      // and eventually re-enter this method and try to free the array again.  by setting the array
+      // to null and its length to 0 we effectively make the spill code-path a no-op.  setting the
+      // array to null also indicates that it has already been de-allocated which prevents a double
+      // de-allocation in free().
       array = null;
       usableCapacity = 0;
       pos = 0;
@@ -211,7 +213,7 @@ public final class UnsafeInMemorySorter {
 
   public void expandPointerArray(LongArray newArray) {
     if (newArray.size() < array.size()) {
-      throw new OutOfMemoryError("Not enough memory to grow pointer array");
+      throw new SparkOutOfMemoryError("Not enough memory to grow pointer array");
     }
     Platform.copyMemory(
       array.getBaseObject(),

@@ -39,6 +39,7 @@ from pyspark.sql.readwriter import DataFrameWriter
 from pyspark.sql.streaming import DataStreamWriter
 from pyspark.sql.types import IntegralType
 from pyspark.sql.types import *
+from pyspark.util import _exception_message
 
 __all__ = ["DataFrame", "DataFrameNaFunctions", "DataFrameStatFunctions"]
 
@@ -130,6 +131,8 @@ class DataFrame(object):
 
         .. note:: Deprecated in 2.0, use createOrReplaceTempView instead.
         """
+        warnings.warn(
+            "Deprecated in 2.0, use createOrReplaceTempView instead.", DeprecationWarning)
         self._jdf.createOrReplaceTempView(name)
 
     @since(2.0)
@@ -363,6 +366,20 @@ class DataFrame(object):
         .. note:: Experimental
         """
         jdf = self._jdf.checkpoint(eager)
+        return DataFrame(jdf, self.sql_ctx)
+
+    @since(2.3)
+    def localCheckpoint(self, eager=True):
+        """Returns a locally checkpointed version of this Dataset. Checkpointing can be used to
+        truncate the logical plan of this DataFrame, which is especially useful in iterative
+        algorithms where the plan may grow exponentially. Local checkpoints are stored in the
+        executors using the caching subsystem and therefore they are not reliable.
+
+        :param eager: Whether to checkpoint this DataFrame immediately
+
+        .. note:: Experimental
+        """
+        jdf = self._jdf.localCheckpoint(eager)
         return DataFrame(jdf, self.sql_ctx)
 
     @since(2.1)
@@ -1308,6 +1325,7 @@ class DataFrame(object):
 
         .. note:: Deprecated in 2.0, use :func:`union` instead.
         """
+        warnings.warn("Deprecated in 2.0, use union instead.", DeprecationWarning)
         return self.union(other)
 
     @since(2.3)
@@ -1878,19 +1896,30 @@ class DataFrame(object):
         1    5    Bob
         """
         import pandas as pd
+
+        if self.sql_ctx.getConf("spark.sql.execution.pandas.respectSessionTimeZone").lower() \
+           == "true":
+            timezone = self.sql_ctx.getConf("spark.sql.session.timeZone")
+        else:
+            timezone = None
+
         if self.sql_ctx.getConf("spark.sql.execution.arrow.enabled", "false").lower() == "true":
             try:
+                from pyspark.sql.types import _check_dataframe_localize_timestamps
+                from pyspark.sql.utils import require_minimum_pyarrow_version
                 import pyarrow
+                require_minimum_pyarrow_version()
                 tables = self._collectAsArrow()
                 if tables:
                     table = pyarrow.concat_tables(tables)
-                    return table.to_pandas()
+                    pdf = table.to_pandas()
+                    return _check_dataframe_localize_timestamps(pdf, timezone)
                 else:
                     return pd.DataFrame.from_records([], columns=self.columns)
             except ImportError as e:
                 msg = "note: pyarrow must be installed and available on calling Python process " \
                       "if using spark.sql.execution.arrow.enabled=true"
-                raise ImportError("%s\n%s" % (e.message, msg))
+                raise ImportError("%s\n%s" % (_exception_message(e), msg))
         else:
             pdf = pd.DataFrame.from_records(self.collect(), columns=self.columns)
 
@@ -1908,7 +1937,17 @@ class DataFrame(object):
 
             for f, t in dtype.items():
                 pdf[f] = pdf[f].astype(t, copy=False)
-            return pdf
+
+            if timezone is None:
+                return pdf
+            else:
+                from pyspark.sql.types import _check_series_convert_timestamps_local_tz
+                for field in self.schema:
+                    # TODO: handle nested timestamps, such as ArrayType(TimestampType())?
+                    if isinstance(field.dataType, TimestampType):
+                        pdf[field.name] = \
+                            _check_series_convert_timestamps_local_tz(pdf[field.name], timezone)
+                return pdf
 
     def _collectAsArrow(self):
         """
@@ -1952,6 +1991,7 @@ def _to_corrected_pandas_type(dt):
     """
     When converting Spark SQL records to Pandas DataFrame, the inferred data type may be wrong.
     This method gets the corrected data type for Pandas if that type may be inferred uncorrectly.
+    NOTE: DateType is inferred incorrectly as 'object', TimestampType is correct with datetime64[ns]
     """
     import numpy as np
     if type(dt) == ByteType:
@@ -1962,6 +2002,8 @@ def _to_corrected_pandas_type(dt):
         return np.int32
     elif type(dt) == FloatType:
         return np.float32
+    elif type(dt) == DateType:
+        return 'datetime64[ns]'
     else:
         return None
 

@@ -17,20 +17,17 @@
 
 package org.apache.spark.sql.hive.execution
 
-import scala.util.control.NonFatal
-
+import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.hive.ql.ErrorMsg
 import org.apache.hadoop.hive.ql.plan.TableDesc
 
 import org.apache.spark.SparkException
-import org.apache.spark.sql.{AnalysisException, Row, SparkSession}
-import org.apache.spark.sql.catalyst.catalog.CatalogTable
+import org.apache.spark.sql.{AnalysisException, Dataset, Row, SparkSession}
+import org.apache.spark.sql.catalyst.catalog.{CatalogTable, ExternalCatalog}
 import org.apache.spark.sql.catalyst.expressions.Attribute
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.execution.command.CommandUtils
-import org.apache.spark.sql.hive._
 import org.apache.spark.sql.hive.HiveShim.{ShimFileSinkDesc => FileSinkDesc}
 import org.apache.spark.sql.hive.client.HiveClientImpl
 
@@ -72,16 +69,12 @@ case class InsertIntoHiveTable(
     overwrite: Boolean,
     ifPartitionNotExists: Boolean) extends SaveAsHiveFile {
 
-  override def children: Seq[LogicalPlan] = query :: Nil
-
   /**
    * Inserts all the rows in the table into Hive.  Row objects are properly serialized with the
    * `org.apache.hadoop.hive.serde2.SerDe` and the
    * `org.apache.hadoop.mapred.OutputFormat` provided by the table definition.
    */
-  override def run(sparkSession: SparkSession, children: Seq[SparkPlan]): Seq[Row] = {
-    assert(children.length == 1)
-
+  override def run(sparkSession: SparkSession): Seq[Row] = {
     val externalCatalog = sparkSession.sharedState.externalCatalog
     val hadoopConf = sparkSession.sessionState.newHadoopConf()
 
@@ -99,6 +92,34 @@ case class InsertIntoHiveTable(
     )
     val tableLocation = hiveQlTable.getDataLocation
     val tmpLocation = getExternalTmpPath(sparkSession, hadoopConf, tableLocation)
+
+    try {
+      processInsert(sparkSession, externalCatalog, hadoopConf, tableDesc, tmpLocation)
+    } finally {
+      // Attempt to delete the staging directory and the inclusive files. If failed, the files are
+      // expected to be dropped at the normal termination of VM since deleteOnExit is used.
+      deleteExternalTmpPath(hadoopConf)
+    }
+
+    // un-cache this table.
+    sparkSession.catalog.uncacheTable(table.identifier.quotedString)
+    sparkSession.sessionState.catalog.refreshTable(table.identifier)
+
+    CommandUtils.updateTableStats(sparkSession, table)
+
+    // It would be nice to just return the childRdd unchanged so insert operations could be chained,
+    // however for now we return an empty list to simplify compatibility checks with hive, which
+    // does not return anything for insert operations.
+    // TODO: implement hive compatibility as rules.
+    Seq.empty[Row]
+  }
+
+  private def processInsert(
+      sparkSession: SparkSession,
+      externalCatalog: ExternalCatalog,
+      hadoopConf: Configuration,
+      tableDesc: TableDesc,
+      tmpLocation: Path): Unit = {
     val fileSinkConf = new FileSinkDesc(tmpLocation.toString, tableDesc, false)
 
     val numDynamicPartitions = partition.values.count(_.isEmpty)
@@ -170,7 +191,7 @@ case class InsertIntoHiveTable(
 
     saveAsHiveFile(
       sparkSession = sparkSession,
-      plan = children.head,
+      queryExecution = Dataset.ofRows(sparkSession, query).queryExecution,
       hadoopConf = hadoopConf,
       fileSinkConf = fileSinkConf,
       outputLocation = tmpLocation.toString,
@@ -239,21 +260,5 @@ case class InsertIntoHiveTable(
         overwrite,
         isSrcLocal = false)
     }
-
-    // Attempt to delete the staging directory and the inclusive files. If failed, the files are
-    // expected to be dropped at the normal termination of VM since deleteOnExit is used.
-    deleteExternalTmpPath(hadoopConf)
-
-    // un-cache this table.
-    sparkSession.catalog.uncacheTable(table.identifier.quotedString)
-    sparkSession.sessionState.catalog.refreshTable(table.identifier)
-
-    CommandUtils.updateTableStats(sparkSession, table)
-
-    // It would be nice to just return the childRdd unchanged so insert operations could be chained,
-    // however for now we return an empty list to simplify compatibility checks with hive, which
-    // does not return anything for insert operations.
-    // TODO: implement hive compatibility as rules.
-    Seq.empty[Row]
   }
 }
