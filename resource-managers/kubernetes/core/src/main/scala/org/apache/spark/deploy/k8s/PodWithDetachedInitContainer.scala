@@ -14,17 +14,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.spark.deploy.k8s
 
-package org.apache.spark.sql.sources.v2.reader;
-
-import java.io.Serializable;
+import io.fabric8.kubernetes.api.model.{Container, Pod}
 
 /**
- * Used for per-partition offsets in continuous processing. ContinuousReader implementations will
- * provide a method to merge these into a global Offset.
+ * Represents a pod with a detached init-container (not yet added to the pod).
  *
- * These offsets must be serializable.
+ * @param pod the pod
+ * @param initContainer the init-container in the pod
+ * @param mainContainer the main container in the pod
  */
-public interface PartitionOffset extends Serializable {
-    
-}
+private[spark] case class PodWithDetachedInitContainer(
+    pod: Pod,
+    initContainer: Container,
+    mainContainer: Container)

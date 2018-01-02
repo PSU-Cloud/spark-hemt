@@ -14,23 +14,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.apache.spark.deploy.k8s.submit
 
-package org.apache.spark.sql.sources.v2.reader;
+import scala.collection.JavaConverters._
 
-import org.apache.spark.sql.sources.v2.reader.PartitionOffset;
+import io.fabric8.kubernetes.api.model.{Container, Pod}
 
-import java.io.IOException;
+private[spark] object SecretVolumeUtils {
 
-/**
- * A variation on {@link DataReader} for use with streaming in continuous processing mode.
- */
-public interface ContinuousDataReader<T> extends DataReader<T> {
-    /**
-     * Get the offset of the current record, or the start offset if no records have been read.
-     *
-     * The execution engine will call this method along with get() to keep track of the current
-     * offset. When an epoch ends, the offset of the previous record in each partition will be saved
-     * as a restart checkpoint.
-     */
-    PartitionOffset getOffset();
+  def podHasVolume(driverPod: Pod, volumeName: String): Boolean = {
+    driverPod.getSpec.getVolumes.asScala.exists(volume => volume.getName == volumeName)
+  }
+
+  def containerHasVolume(
+      driverContainer: Container,
+      volumeName: String,
+      mountPath: String): Boolean = {
+    driverContainer.getVolumeMounts.asScala.exists(volumeMount =>
+      volumeMount.getName == volumeName && volumeMount.getMountPath == mountPath)
+  }
 }

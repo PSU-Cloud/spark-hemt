@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package org.apache.spark.sql.sources.v2.reader;
+package org.apache.spark.sql.sources.v2.streaming.reader;
 
 /**
  * An abstract representation of progress through a [[MicroBatchReader]] or [[ContinuousReader]].
@@ -42,7 +42,8 @@ public abstract class Offset extends org.apache.spark.sql.execution.streaming.Of
     @Override
     public boolean equals(Object obj) {
         if (obj instanceof org.apache.spark.sql.execution.streaming.Offset) {
-            return this.json().equals(((org.apache.spark.sql.execution.streaming.Offset) obj).json());
+            return this.json()
+                .equals(((org.apache.spark.sql.execution.streaming.Offset) obj).json());
         } else {
             return false;
         }
