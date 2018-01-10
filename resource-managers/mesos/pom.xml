@@ -29,20 +29,20 @@
   <name>Spark Project Mesos</name>
   <properties>
     <sbt.project.name>mesos</sbt.project.name>
-    <mesos.version>1.4.0</mesos.version>
+    <mesos.version>1.5.0</mesos.version>
     <mesos.classifier>shaded-protobuf</mesos.classifier>
   </properties>
 
   <dependencies>
     <dependency>
       <groupId>org.apache.spark</groupId>
-      <artifactId>spark-core_${scala.binary.version}</artifactId>
+      <artifactId>spark-core_2.11</artifactId>
       <version>${project.version}</version>
     </dependency>
 
     <dependency>
       <groupId>org.apache.spark</groupId>
-      <artifactId>spark-core_${scala.binary.version}</artifactId>
+      <artifactId>spark-core_2.11</artifactId>
       <version>${project.version}</version>
       <type>test-jar</type>
       <scope>test</scope>
@@ -66,6 +66,8 @@
           <artifactId>protobuf-java</artifactId>
         </exclusion>
       </exclusions>
+      <scope>system</scope>
+      <systemPath>/home/yuquan/mesos/build/src/java/target/mesos-1.5.0-shaded-protobuf.jar</systemPath>
     </dependency>
 
     <dependency>

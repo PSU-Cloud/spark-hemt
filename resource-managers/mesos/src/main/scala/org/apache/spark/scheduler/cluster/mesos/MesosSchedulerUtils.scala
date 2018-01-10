@@ -98,6 +98,12 @@ trait MesosSchedulerUtils extends Logging {
     if (maxGpus > 0) {
       fwInfoBuilder.addCapabilities(Capability.newBuilder().setType(Capability.Type.GPU_RESOURCES))
     }
+
+    // add D-vector
+    val cpus = conf.getDouble("spark.executor.cores", 1)
+    val mem = conf.getSizeAsMb("spark.executor.memory", "1024").toInt
+    fwInfoBuilder.setDvector(fwInfoBuilder.getDvectorBuilder.setCpus(cpus).setMem(mem).build())
+
     if (credBuilder.hasPrincipal) {
       new MesosSchedulerDriver(
         scheduler, fwInfoBuilder.build(), masterUrl, credBuilder.build())
