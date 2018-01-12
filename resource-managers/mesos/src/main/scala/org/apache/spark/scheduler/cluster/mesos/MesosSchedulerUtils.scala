@@ -101,7 +101,11 @@ trait MesosSchedulerUtils extends Logging {
 
     // add D-vector
     val cpus = conf.getDouble("spark.executor.cores", 1)
-    val mem = conf.getSizeAsMb("spark.executor.memory", "1024").toInt
+    val mem = conf.getSizeAsMb("spark.executor.memory", "1024").toInt +
+      conf.getInt("spark.mesos.executor.memoryOverhead",
+      math.max(MEMORY_OVERHEAD_FRACTION * conf.getSizeAsMb("spark.executor.memory", "1024").toInt,
+        MEMORY_OVERHEAD_MINIMUM).toInt)
+    fwInfoBuilder.setDvEnabled(true)
     fwInfoBuilder.setDvector(fwInfoBuilder.getDvectorBuilder.setCpus(cpus).setMem(mem).build())
 
     if (credBuilder.hasPrincipal) {
