@@ -70,8 +70,8 @@ trait MesosSchedulerUtils extends Logging {
       checkpoint: Option[Boolean] = None,
       failoverTimeout: Option[Double] = None,
       frameworkId: Option[String] = None): SchedulerDriver = {
-    createSchedulerDriverImpl(masterUrl, scheduler, sparkUser, appName, conf, webuiUrl, checkpoint,
-      failoverTimeout, frameworkId, false);
+    createSchedulerDriverImpl(masterUrl, scheduler, sparkUser, appName, conf, webuiUrl,
+      checkpoint, failoverTimeout, frameworkId, false);
   }
 
   protected def createSchedulerDriverImpl(

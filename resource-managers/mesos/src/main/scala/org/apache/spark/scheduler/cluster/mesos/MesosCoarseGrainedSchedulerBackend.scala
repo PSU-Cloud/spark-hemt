@@ -204,7 +204,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
       ""
     }
 
-    val driver = createSchedulerDriver(
+    val driver = createSchedulerDriverImpl(
       master,
       MesosCoarseGrainedSchedulerBackend.this,
       sc.sparkUser,
