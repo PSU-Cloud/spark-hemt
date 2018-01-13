@@ -213,7 +213,8 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
       sc.conf.getOption("spark.mesos.driver.webui.url").orElse(sc.ui.map(_.webUrl)),
       None,
       Some(sc.conf.get(DRIVER_FAILOVER_TIMEOUT)),
-      sc.conf.getOption("spark.mesos.driver.frameworkId").map(_ + suffix)
+      sc.conf.getOption("spark.mesos.driver.frameworkId").map(_ + suffix),
+      true
     )
 
     launcherBackend.setState(SparkAppHandle.State.SUBMITTED)

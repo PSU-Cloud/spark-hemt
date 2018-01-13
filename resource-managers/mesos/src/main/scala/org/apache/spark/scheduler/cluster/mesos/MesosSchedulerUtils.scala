@@ -70,6 +70,21 @@ trait MesosSchedulerUtils extends Logging {
       checkpoint: Option[Boolean] = None,
       failoverTimeout: Option[Double] = None,
       frameworkId: Option[String] = None): SchedulerDriver = {
+    createSchedulerDriver(masterUrl, scheduler, sparkUser, appName, conf, webuiUrl, checkpoint,
+      failoverTimeout,frameworkId, false);
+  }
+
+  protected def createSchedulerDriver(
+      masterUrl: String,
+      scheduler: Scheduler,
+      sparkUser: String,
+      appName: String,
+      conf: SparkConf,
+      webuiUrl: Option[String] = None,
+      checkpoint: Option[Boolean] = None,
+      failoverTimeout: Option[Double] = None,
+      frameworkId: Option[String] = None,
+      dvEnabled: Boolean): SchedulerDriver = {
     val fwInfoBuilder = FrameworkInfo.newBuilder().setUser(sparkUser).setName(appName)
     val credBuilder = Credential.newBuilder()
     webuiUrl.foreach { url => fwInfoBuilder.setWebuiUrl(url) }
@@ -100,13 +115,15 @@ trait MesosSchedulerUtils extends Logging {
     }
 
     // add D-vector
-    val cpus = conf.getDouble("spark.executor.cores", 1)
-    val mem = conf.getSizeAsMb("spark.executor.memory", "1024").toInt +
-      conf.getInt("spark.mesos.executor.memoryOverhead",
-      math.max(MEMORY_OVERHEAD_FRACTION * conf.getSizeAsMb("spark.executor.memory", "1024").toInt,
-        MEMORY_OVERHEAD_MINIMUM).toInt)
-    fwInfoBuilder.setDvEnabled(true)
-    fwInfoBuilder.setDvector(fwInfoBuilder.getDvectorBuilder.setCpus(cpus).setMem(mem).build())
+    if (dvEnabled) {
+      val cpus = conf.getDouble("spark.executor.cores", 1)
+      val mem = conf.getSizeAsMb("spark.executor.memory", "1024").toInt +
+        conf.getInt("spark.mesos.executor.memoryOverhead",
+          math.max(MEMORY_OVERHEAD_FRACTION * conf.getSizeAsMb("spark.executor.memory",
+            "1024").toInt, MEMORY_OVERHEAD_MINIMUM).toInt)
+      fwInfoBuilder.setDvEnabled(true)
+      fwInfoBuilder.setDvector(fwInfoBuilder.getDvectorBuilder.setCpus(cpus).setMem(mem).build())
+    }
 
     if (credBuilder.hasPrincipal) {
       new MesosSchedulerDriver(
