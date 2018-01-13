@@ -70,11 +70,11 @@ trait MesosSchedulerUtils extends Logging {
       checkpoint: Option[Boolean] = None,
       failoverTimeout: Option[Double] = None,
       frameworkId: Option[String] = None): SchedulerDriver = {
-    createSchedulerDriver(masterUrl, scheduler, sparkUser, appName, conf, webuiUrl, checkpoint,
-      failoverTimeout,frameworkId, false);
+    createSchedulerDriverImpl(masterUrl, scheduler, sparkUser, appName, conf, webuiUrl, checkpoint,
+      failoverTimeout, frameworkId, false);
   }
 
-  protected def createSchedulerDriver(
+  protected def createSchedulerDriverImpl(
       masterUrl: String,
       scheduler: Scheduler,
       sparkUser: String,
@@ -84,7 +84,7 @@ trait MesosSchedulerUtils extends Logging {
       checkpoint: Option[Boolean] = None,
       failoverTimeout: Option[Double] = None,
       frameworkId: Option[String] = None,
-      dvEnabled: Boolean): SchedulerDriver = {
+      dvEnabled: Boolean = false): SchedulerDriver = {
     val fwInfoBuilder = FrameworkInfo.newBuilder().setUser(sparkUser).setName(appName)
     val credBuilder = Credential.newBuilder()
     webuiUrl.foreach { url => fwInfoBuilder.setWebuiUrl(url) }
