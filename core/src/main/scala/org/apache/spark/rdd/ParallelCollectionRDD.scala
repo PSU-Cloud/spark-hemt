@@ -88,6 +88,10 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
     numSlices: Int,
     locationPrefs: Map[Int, Seq[String]])
     extends RDD[T](sc, Nil) {
+  // a flag indicating whether optRepartition() has been called, it might be used in
+  // getPreferedLocations
+  private var opted = false
+
   // TODO: Right now, each split sends along its full data, even if later down the RDD chain it gets
   // cached. It might be worthwhile to write the data to a file in the DFS and read it in the split
   // instead.
@@ -96,6 +100,23 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
   override def getPartitions: Array[Partition] = {
     val slices = ParallelCollectionRDD.slice(data, numSlices).toArray
     slices.indices.map(i => new ParallelCollectionPartition(id, i, slices(i))).toArray
+  }
+
+  // TODO(ata and nader): override the function optRepartition to change the behavior of
+  // getPartitions (re-slice the cake) according to the computation ability of the executors,
+  // which should have been stored in sc.executorTokens. Also, after calling this function,
+  // the behavior of getPreferredLocations should be changed. See line 65-69 in TaskLocation.scala
+  // for valid location format. I think executor_[hostname]_[executorid] is a good choice if we use
+  // executor -> num of tokens mapping, or [host] is enough if we use host -> num of tokens
+  // mapping.
+  override def optRepartition(): RDD[T] = {
+    // delete the following line when implementing.
+    // TODO(ata): change the behavior of getPartitions(), maybe set var opted to true, and add
+    // if(opted) {} clause so that it can call a different overloaded
+    // ParallelCollectionRDD.slice()?
+    null
+    // TODO(nader): don't forget to update locationPrefs, using sc.executorTokens
+    // (and maybe sc.executorToHost).
   }
 
   override def compute(s: Partition, context: TaskContext): Iterator[T] = {
