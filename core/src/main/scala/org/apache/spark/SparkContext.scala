@@ -325,6 +325,27 @@ class SparkContext(config: SparkConf) extends Logging {
 
   private[spark] var checkpointDir: Option[String] = None
 
+  /**
+   * The executorId -> num of tokens map, which can be used when doing optRepartition and task
+   * scheduling.
+   * TODO(ata): need to update this map every time the executor token is updated.
+   * TODO(futurework): need to check whether the map has to be concurrent (how many threads can
+   * modify it?). Or maybe we can simply keep host -> num of tokens map. As it is
+   * memory-efficient, and leads to simpler location string format, just [hostname], instead of
+   * executor_[host]_[executorid].
+   */
+  val executorTokens: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]()
+
+  /**
+   * The executorId -> hostname map, solely used to create location string if we use
+   * executor -> num of tokens mapping. If we use host -> num of tokens mapping, then there
+   * is no need to use this map.
+   * TODO(ata): update this map every time the executor token is updated, hostname can be
+   * obtained through heartbeat.blockManagerId.host.
+   * TODO(futurework): need to update this map once an executor is removed from the host.
+   */
+  val executorToHost: ConcurrentMap[String, String] = new ConcurrentHashMap[String, String]()
+
   // Thread Local variable that can be used by users to pass information down the stack
   protected[spark] val localProperties = new InheritableThreadLocal[Properties] {
     override protected def childValue(parent: Properties): Properties = {
