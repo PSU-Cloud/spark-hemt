@@ -109,12 +109,11 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
   // for valid location format. I think executor_[hostname]_[executorid] is a good choice if we use
   // executor -> num of tokens mapping, or [host] is enough if we use host -> num of tokens
   // mapping.
-  override def optRepartition(): RDD[T] = {
-    // delete the following line when implementing.
+  override def optRepartition(): Unit = {
     // TODO(ata): change the behavior of getPartitions(), maybe set var opted to true, and add
     // if(opted) {} clause so that it can call a different overloaded
     // ParallelCollectionRDD.slice()?
-    null
+
     // TODO(nader): don't forget to update locationPrefs, using sc.executorTokens
     // (and maybe sc.executorToHost).
   }
