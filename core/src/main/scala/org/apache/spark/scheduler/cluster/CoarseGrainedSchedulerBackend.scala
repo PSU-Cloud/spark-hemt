@@ -547,6 +547,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
       localityAwareTasks: Int,
       hostToLocalTaskCount: Map[String, Int]
     ): Boolean = {
+    logInfo(s"Number of executors I'm requesting: $numExecutors")
     if (numExecutors < 0) {
       throw new IllegalArgumentException(
         "Attempted to request a negative number of executor(s) " +

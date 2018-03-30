@@ -68,6 +68,7 @@ private[deploy] class Master(
 
   private val idToWorker = new HashMap[String, WorkerInfo]
   private val addressToWorker = new HashMap[RpcAddress, WorkerInfo]
+  private val workerToTokens = new HashMap[String, Int]
 
   private val endpointToApp = new HashMap[RpcEndpointRef, ApplicationInfo]
   private val addressToApp = new HashMap[RpcAddress, ApplicationInfo]
@@ -324,10 +325,12 @@ private[deploy] class Master(
           throw new Exception(s"Received unexpected state update for driver $driverId: $state")
       }
 
-    case Heartbeat(workerId, worker) =>
+    case Heartbeat(workerId, worker, token) =>
       idToWorker.get(workerId) match {
         case Some(workerInfo) =>
           workerInfo.lastHeartbeat = System.currentTimeMillis()
+          logInfo(s"The current number of tokens of this worker is $token.")
+          workerToTokens.put(workerId, token)
         case None =>
           if (workers.map(_.id).contains(workerId)) {
             logWarning(s"Got heartbeat from unregistered worker $workerId." +
@@ -748,7 +751,8 @@ private[deploy] class Master(
     worker.endpoint.send(LaunchExecutor(masterUrl,
       exec.application.id, exec.id, exec.application.desc, exec.cores, exec.memory))
     exec.application.driver.send(
-      ExecutorAdded(exec.id, worker.id, worker.hostPort, exec.cores, exec.memory))
+      ExecutorAdded(exec.id, worker.id, worker.hostPort,
+        exec.cores, exec.memory, workerToTokens.getOrElse(worker.id, 0)))
   }
 
   private def registerWorker(worker: WorkerInfo): Boolean = {

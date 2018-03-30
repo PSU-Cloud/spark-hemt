@@ -85,7 +85,8 @@ private[deploy] object DeployMessages {
       executors: Seq[ExecutorDescription],
       driverIds: Seq[String]) extends DeployMessage
 
-  case class Heartbeat(workerId: String, worker: RpcEndpointRef) extends DeployMessage
+  case class Heartbeat(
+      workerId: String, worker: RpcEndpointRef, token: Int = 0) extends DeployMessage
 
   // Master to Worker
 
@@ -149,7 +150,8 @@ private[deploy] object DeployMessages {
   case class RegisteredApplication(appId: String, master: RpcEndpointRef) extends DeployMessage
 
   // TODO(matei): replace hostPort with host
-  case class ExecutorAdded(id: Int, workerId: String, hostPort: String, cores: Int, memory: Int) {
+  case class ExecutorAdded(
+      id: Int, workerId: String, hostPort: String, cores: Int, memory: Int, initToken: Int = 0) {
     Utils.checkHostPort(hostPort)
   }
 

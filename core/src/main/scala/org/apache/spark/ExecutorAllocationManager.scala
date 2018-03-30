@@ -128,6 +128,8 @@ private[spark] class ExecutorAllocationManager(
   // is the number of executors we would immediately want from the cluster manager.
   private var numExecutorsTarget = initialNumExecutors
 
+  logInfo(s"num of Executors to Start with: $numExecutorsTarget")
+
   // Executors that have been requested to be removed but have not been killed yet
   private val executorsPendingToRemove = new mutable.HashSet[String]
 
