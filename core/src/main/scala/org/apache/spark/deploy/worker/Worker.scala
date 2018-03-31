@@ -451,7 +451,7 @@ private[deploy] class Worker(
           val cw = AmazonCloudWatchClientBuilder.defaultClient()
           val instanceDimension = new Dimension()
           instanceDimension.setName("InstanceId")
-          instanceDimension.setValue("i-06fd2af9aba3b7589")
+          instanceDimension.setValue(EC2MetadataUtils.getInstanceId())
 
           val request = new GetMetricStatisticsRequest()
               .withStartTime(new Date(new Date().getTime() - 300000))
@@ -462,17 +462,21 @@ private[deploy] class Worker(
               .withDimensions(Arrays.asList(instanceDimension))
               .withEndTime(new Date())
 
-          val result = cw.getMetricStatistics(request)
-
           var credits: Int = 0
           try {
+            val result = cw.getMetricStatistics(request)
             credits= result.getDatapoints().get(0).getAverage().toInt
+            logInfo(s"Got current token $credits.")
           }
           catch {
-            case _: Throwable => credits = 0
+            case e: Exception =>
+              logInfo(s"Something wrong with gettting credits for " +
+                instanceDimension.getValue() + ": " + e.toString())
+              credits = 0
           }
           sendToMaster(Heartbeat(workerId, self, credits))
         } else {
+          logInfo(s"Sending heartbeat to master assuming not running on AWS.")
           sendToMaster(Heartbeat(workerId, self))
         }
       }
@@ -792,7 +796,7 @@ private[deploy] object Worker extends Logging {
     Utils.initDaemon(log)
     val conf = new SparkConf
     val args = new WorkerArguments(argStrings, conf)
-    conf.set("spark.work.aws", args.aws)
+    conf.set("spark.worker.aws", args.aws)
     val rpcEnv = startRpcEnvAndEndpoint(args.host, args.port, args.webUiPort, args.cores,
       args.memory, args.masters, args.workDir, conf = conf)
     // With external shuffle service enabled, if we request to launch multiple workers on one host,

@@ -145,7 +145,8 @@ private[worker] class WorkerArguments(args: Array[String], conf: SparkConf) {
       "  -p PORT, --port PORT     Port to listen on (default: random)\n" +
       "  --webui-port PORT        Port for web UI (default: 8081)\n" +
       "  --properties-file FILE   Path to a custom Spark properties file.\n" +
-      "                           Default is conf/spark-defaults.conf.")
+      "                           Default is conf/spark-defaults.conf\n" +
+      "  --aws true/false         Running on AWS? default false.")
     // scalastyle:on println
     System.exit(exitCode)
   }
