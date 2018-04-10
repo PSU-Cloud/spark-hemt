@@ -96,6 +96,17 @@
       <artifactId>curator-recipes</artifactId>
     </dependency>
 
+
+    <!--
+    AWS related dependencies
+    -->
+
+    <dependency>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-java-sdk</artifactId>
+      <version>1.11.285</version>
+    </dependency>
+
     <!-- Jetty dependencies promoted to compile here so they are shaded
          and inlined into spark-core jar -->
     <dependency>

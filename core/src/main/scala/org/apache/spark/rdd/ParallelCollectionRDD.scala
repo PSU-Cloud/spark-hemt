@@ -98,7 +98,12 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
   // UPDATE: A parallel collection can be checkpointed to HDFS, which achieves this goal.
 
   override def getPartitions: Array[Partition] = {
-    val slices = ParallelCollectionRDD.slice(data, numSlices).toArray
+    var slices:Array[Seq[T]] = null
+    if (!opted) {
+      slices = ParallelCollectionRDD.slice(data, numSlices).toArray
+    } else {
+      slices = ParallelCollectionRDD.slice(data, sc).toArray
+    }
     slices.indices.map(i => new ParallelCollectionPartition(id, i, slices(i))).toArray
   }
 
@@ -113,7 +118,7 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
     // TODO(ata): change the behavior of getPartitions(), maybe set var opted to true, and add
     // if(opted) {} clause so that it can call a different overloaded
     // ParallelCollectionRDD.slice()?
-
+    opted = true
     // TODO(nader): don't forget to update locationPrefs, using sc.executorTokens
     // (and maybe sc.executorToHost).
   }
@@ -173,6 +178,54 @@ private object ParallelCollectionRDD {
         positions(array.length, numSlices).map { case (start, end) =>
             array.slice(start, end).toSeq
         }.toSeq
+    }
+  }
+
+  def slice[T: ClassTag](seq: Seq[T], sc: SparkContext): Seq[Seq[T]] = {
+    val executorTokens = sc.executorTokens
+    // Here we do the partition based on the values in executorTokens.
+
+    if (executorTokens.size() < 1) {
+      throw new IllegalArgumentException("Positive number of partitions required")
+    }
+    // Sequences need to be sliced at the same set of index positions for operations
+    // like RDD.zip() to behave as expected
+
+    var tokens = executorTokens.values().toArray.map(i => i.asInstanceOf[Int])
+    val numSlices = executorTokens.values().size()
+    var totalWeight = 0
+    tokens.foreach(totalWeight += _)
+    var weights = Array[Int]()
+    tokens.map(i=> weights = weights :+ math.ceil( ( i.toDouble / totalWeight.toDouble) * seq.length.toDouble ).toInt)
+    weights = weights.sorted
+    var excess = 0
+    weights.foreach(excess += _)
+    excess = excess - seq.length
+
+    (0 until excess).map { i => weights(weights.length - 1 - i) -= 1}
+
+
+    def positions(length: Long, weights: Array[Int]): Iterator[(Int, Int)] = {
+      var start = 0
+      var end = -1
+      (0 until numSlices).iterator.map { i =>
+        start = end + 1
+        end = start  + weights(i) - 1
+        (start, end)
+      }
+    }
+    seq match {
+      case r: Range =>
+        positions(r.length, weights).zipWithIndex.map { case ((start, end), index) =>
+          // If the range is inclusive, use inclusive range for the last slice
+          if (r.isInclusive && index == numSlices - 1) {
+            new Range.Inclusive(r.start + start * r.step, r.end, r.step)
+          }
+          else {
+            new Range(r.start + start * r.step, r.start + end * r.step, r.step)
+          }
+        }.toSeq.asInstanceOf[Seq[Seq[T]]]
+      //ToDo other cases like nr and _
     }
   }
 }
