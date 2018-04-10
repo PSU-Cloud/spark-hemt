@@ -808,7 +808,7 @@ private[spark] class Executor(
       credits= result.getDatapoints().get(0).getAverage().toInt
     }
     catch{
-      case _: Throwable => println("No response from AWS")
+      case _: Throwable => logWarning("No response from AWS CloudWatch")
 
     }
 
