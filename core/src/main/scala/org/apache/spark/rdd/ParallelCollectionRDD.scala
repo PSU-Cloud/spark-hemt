@@ -225,7 +225,22 @@ private object ParallelCollectionRDD {
             new Range(r.start + start * r.step, r.start + end * r.step, r.step)
           }
         }.toSeq.asInstanceOf[Seq[Seq[T]]]
-      //ToDo other cases like nr and _
+
+      case nr: NumericRange[_] =>
+        // For ranges of Long, Double, BigInteger, etc
+        val slices = new ArrayBuffer[Seq[T]](numSlices)
+        var r = nr
+        for ((start, end) <- positions(nr.length, weights)) {
+          val sliceSize = end - start
+          slices += r.take(sliceSize).asInstanceOf[Seq[T]]
+          r = r.drop(sliceSize)
+        }
+        slices
+      case _ =>
+        val array = seq.toArray // To prevent O(n^2) operations for List etc
+        positions(array.length, weights).map { case (start, end) =>
+          array.slice(start, end).toSeq
+        }.toSeq
     }
   }
 }
