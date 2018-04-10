@@ -207,6 +207,8 @@ private[spark] class TaskSetManager(
 
   /** Add a task to all the pending-task lists that it should be on. */
   private[spark] def addPendingTask(index: Int) {
+    // TODO(yuquanshan): figure out how Spark, with multiple pending task list, avoids scheduling
+    // the same task multiple times.
     for (loc <- tasks(index).preferredLocations) {
       loc match {
         case e: ExecutorCacheTaskLocation =>
