@@ -91,6 +91,7 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
   // a flag indicating whether optRepartition() has been called, it might be used in
   // getPreferedLocations
   private var opted = false
+
   // TODO: Right now, each split sends along its full data, even if later down the RDD chain it gets
   // cached. It might be worthwhile to write the data to a file in the DFS and read it in the split
   // instead.
@@ -114,6 +115,9 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
   // executor -> num of tokens mapping, or [host] is enough if we use host -> num of tokens
   // mapping.
   override def optRepartition(): Unit = {
+    // TODO(ata): change the behavior of getPartitions(), maybe set var opted to true, and add
+    // if(opted) {} clause so that it can call a different overloaded
+    // ParallelCollectionRDD.slice()?
     opted = true
     // TODO(nader): don't forget to update locationPrefs, using sc.executorTokens
     // (and maybe sc.executorToHost).

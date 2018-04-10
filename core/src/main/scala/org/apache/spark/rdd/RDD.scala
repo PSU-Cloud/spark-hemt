@@ -422,6 +422,12 @@ abstract class RDD[T: ClassTag](
   }
 
   /**
+   * API for optimized repartition, i.e., repartition according to different computation
+   * ability of the executors. Need to override it in some RDDs, e.g., ParallelCollectionRDD.
+   */
+  def optRepartition(): Unit = {}
+
+  /**
    * Return a new RDD that is reduced into `numPartitions` partitions.
    *
    * This results in a narrow dependency, e.g. if you go from 1000 partitions
