@@ -325,6 +325,18 @@ class SparkContext(config: SparkConf) extends Logging {
 
   private[spark] var checkpointDir: Option[String] = None
 
+  /**
+    * The executorId -> num of tokens map, which can be used when doing optRepartition and task scheduling.
+    */
+  val executorTokens: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]()
+
+  /**
+  * The executorId -> hostname map, solely used to create location string if we use
+  * executor -> num of tokens mapping. If we use host -> num of tokens mapping, then there
+  * is no need to use this map
+    */
+  val executorToHost: ConcurrentMap[String, String] = new ConcurrentHashMap[String, String]()
+
   // Thread Local variable that can be used by users to pass information down the stack
   protected[spark] val localProperties = new InheritableThreadLocal[Properties] {
     override protected def childValue(parent: Properties): Properties = {

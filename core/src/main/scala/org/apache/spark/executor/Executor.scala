@@ -24,6 +24,16 @@ import java.net.{URI, URL}
 import java.nio.ByteBuffer
 import java.util.Properties
 import java.util.concurrent._
+import com.amazonaws.services.cloudwatch.model.Dimension
+import com.amazonaws.services.cloudwatch.AmazonCloudWatch
+import com.amazonaws.services.cloudwatch.AmazonCloudWatchClientBuilder
+import com.amazonaws.services.cloudwatch.model.ListMetricsRequest
+import com.amazonaws.services.cloudwatch.model.GetMetricStatisticsRequest
+import com.amazonaws.services.cloudwatch.model.GetMetricStatisticsResult
+import com.amazonaws.services.cloudwatch.model.ListMetricsResult
+import com.amazonaws.services.cloudwatch.model.Metric
+import com.amazonaws.util.EC2MetadataUtils
+import java.util._
 import javax.annotation.concurrent.GuardedBy
 
 import scala.collection.JavaConverters._
@@ -780,7 +790,29 @@ private[spark] class Executor(
       }
     }
 
-    val message = Heartbeat(executorId, accumUpdates.toArray, env.blockManager.blockManagerId)
+    val cw = AmazonCloudWatchClientBuilder.defaultClient()
+    val instanceDimension = new Dimension()
+    instanceDimension.setName("InstanceId")
+    instanceDimension.setValue(EC2MetadataUtils.getInstanceId())
+    val request = new GetMetricStatisticsRequest()
+      .withStartTime(new Date(new Date().getTime() - 300000))
+      .withNamespace("AWS/EC2")
+      .withPeriod(60 * 60)
+      .withMetricName("CPUCreditBalance")
+      .withStatistics("Average")
+      .withDimensions(Arrays.asList(instanceDimension))
+      .withEndTime(new Date())
+    val result = cw.getMetricStatistics(request)
+    var credits: Int  = 0
+    try{
+      credits= result.getDatapoints().get(0).getAverage().toInt
+    }
+    catch{
+      case _: Throwable => println("No response from AWS")
+
+    }
+
+    val message = Heartbeat(executorId, accumUpdates.toArray, env.blockManager.blockManagerId, credits)
     try {
       val response = heartbeatReceiverRef.askSync[HeartbeatResponse](
           message, RpcTimeout(conf, "spark.executor.heartbeatInterval", "10s"))
