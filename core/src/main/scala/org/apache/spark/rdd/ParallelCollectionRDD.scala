@@ -24,6 +24,7 @@ import scala.collection.Map
 import scala.collection.immutable.NumericRange
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
+import scala.util.control.Breaks._
 
 import org.apache.spark._
 import org.apache.spark.serializer.JavaSerializer
@@ -191,18 +192,53 @@ private object ParallelCollectionRDD {
     // Sequences need to be sliced at the same set of index positions for operations
     // like RDD.zip() to behave as expected
 
-    var tokens = executorTokens.values().toArray.map(i => i.asInstanceOf[Int])
+    var tokens = executorTokens.values().toArray.map(i => i.asInstanceOf[Int]).sorted
     val numSlices = executorTokens.values().size()
+    val pi = numSlices //Totla amount of work done by single noge single vCPU
+    val bf = 0.2 // base performance of vCPU
+
+    //fucntion to calulate amout of CPU peromance based on available tokens
+    def _func(_tokens: Array[Int], t: Double): Double= {
+      var slope = 0
+      for (c <- _tokens){
+        if (t <= c){slope += 1}
+        else {slope += bf}
+      }
+      return slope*t
+    }
+    var l: Double = numSlices.asInstanceOf[Double] //What should be l?
+    var t: Double = 0.0
+    var opt_t: Double = 0.0
+    while (t <= pi){
+      if(_func(tokens, t) - l > 0.01){
+        opt_t = t
+        break()
+      }
+      t += 0.01
+    }
+
+    //calculate amout of work per excutor
+    def calc_l(token:Int, t: Double): Double ={
+      if (t <= token){return t}
+      else {return token + (t - token) * bf}
+    }
+
+    var weights = Array[Int]()
+    for(token <- tokens){
+      weights = weights :+ math.round(calc_l(token, opt_t)).toInt
+    }
+    //tokens.map(i=> weights = weights :+ math.ceil( ( i.toDouble / totalWeight.toDouble) * seq.length.toDouble ).toInt)
+
     var totalWeight = 0
     tokens.foreach(totalWeight += _)
-    var weights = Array[Int]()
-    tokens.map(i=> weights = weights :+ math.ceil( ( i.toDouble / totalWeight.toDouble) * seq.length.toDouble ).toInt)
+
+
     weights = weights.sorted
     var excess = 0
     weights.foreach(excess += _)
     excess = excess - seq.length
 
-    (0 until excess).map { i => weights(weights.length - 1 - i) -= 1}
+    (0 until excess).foreach { i => weights(weights.length - 1 - i) -= 1}
 
 
     def positions(length: Long, weights: Array[Int]): Iterator[(Int, Int)] = {
