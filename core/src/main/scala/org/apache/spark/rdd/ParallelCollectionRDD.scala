@@ -206,6 +206,7 @@ private object ParallelCollectionRDD {
       }
       return slope*t
     }
+
     var l: Double = numSlices.asInstanceOf[Double] //What should be l?
     var t: Double = 0.0
     var opt_t: Double = 0.0
@@ -223,36 +224,31 @@ private object ParallelCollectionRDD {
       else {return token + (t - token) * bf}
     }
 
-    var weights = Array[Int]()
+    var l_i = Array[Double]()
     for(token <- tokens){
-      weights = weights :+ math.round(calc_l(token, opt_t)).toInt
+      l_i = l_i :+ calc_l(token, opt_t)
     }
-    //tokens.map(i=> weights = weights :+ math.ceil( ( i.toDouble / totalWeight.toDouble) * seq.length.toDouble ).toInt)
+    var L = 0
+    l_i.foreach(L += _)
 
-    var totalWeight = 0
-    tokens.foreach(totalWeight += _)
-
-
-    weights = weights.sorted
-    var excess = 0
-    weights.foreach(excess += _)
-    excess = excess - seq.length
-
-    (0 until excess).foreach { i => weights(weights.length - 1 - i) -= 1}
+    //var weights = Array[Double]()
+    //l_i.foreach(i=> weights = weights :+ math.round((i/L)*seq.length))
 
 
-    def positions(length: Long, weights: Array[Int]): Iterator[(Int, Int)] = {
+    def positions(length: Long, l_i: Array[Double]): Iterator[(Int, Int)] = {
       var start = 0
-      var end = -1
+      var end = 0
+      var offset = 0
       (0 until numSlices).iterator.map { i =>
-        start = end + 1
-        end = start  + weights(i) - 1
+        start = offset
+        end = (start + (l_i(i) * length) / L).toInt
+        offset = end
         (start, end)
       }
     }
     seq match {
       case r: Range =>
-        positions(r.length, weights).zipWithIndex.map { case ((start, end), index) =>
+        positions(r.length, l_i).zipWithIndex.map { case ((start, end), index) =>
           // If the range is inclusive, use inclusive range for the last slice
           if (r.isInclusive && index == numSlices - 1) {
             new Range.Inclusive(r.start + start * r.step, r.end, r.step)
@@ -266,7 +262,7 @@ private object ParallelCollectionRDD {
         // For ranges of Long, Double, BigInteger, etc
         val slices = new ArrayBuffer[Seq[T]](numSlices)
         var r = nr
-        for ((start, end) <- positions(nr.length, weights)) {
+        for ((start, end) <- positions(nr.length, l_i)) {
           val sliceSize = end - start
           slices += r.take(sliceSize).asInstanceOf[Seq[T]]
           r = r.drop(sliceSize)
