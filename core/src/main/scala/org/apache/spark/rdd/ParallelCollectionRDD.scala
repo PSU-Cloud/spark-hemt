@@ -231,6 +231,7 @@ private object ParallelCollectionRDD {
         var c = data_points(i)._1._2
         var x = data_points(i)._1._1
         opt_t = (l + s * x - c) / s
+        break()
       }
     }
 
