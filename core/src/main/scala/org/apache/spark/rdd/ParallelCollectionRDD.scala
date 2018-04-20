@@ -197,25 +197,41 @@ private object ParallelCollectionRDD {
     val pi = numSlices //Totla amount of work done by single noge single vCPU
     val bf = 0.2 // base performance of vCPU
 
-    //fucntion to calulate amout of CPU peromance based on available tokens
-    def _func(_tokens: Array[Int], t: Double): Double= {
-      var slope = 0
-      for (c <- _tokens){
-        if (t <= c){slope += 1}
-        else {slope += bf}
-      }
-      return slope*t
+    def slope(i:Int): Double ={
+      var s = 0.0
+      for (token <- tokens){
+          if (token >= tokens(i+1)  )
+          {
+            s += 1
+          }
+        else {
+            s += bf
+          }
+        }
+       s
     }
 
-    var l: Double = numSlices.asInstanceOf[Double] //What should be l?
-    var t: Double = 0.0
+    val l: Double = numSlices.asInstanceOf[Double] //What should be l?
     var opt_t: Double = 0.0
-    while (t <= pi){
-      if(_func(tokens, t) - l > 0.01){
-        opt_t = t
-        break()
+    var data_points = Array[((Double,Double),(Double,Double))]()
+    var last_point = ((0.0,0.0),(0.0,0.0))
+    (0 until tokens.length -1).foreach{i =>
+      if(tokens(i) != tokens(i+1)) {
+        var new_point = (last_point._2,
+        (tokens(i+1).toDouble, slope(i) * (tokens(i+1) - last_point._2._1 ) +last_point._2._2 ) )
+        data_points = data_points :+ new_point
+        last_point = new_point
       }
-      t += 0.01
+    }
+    data_points.indices.foreach{
+      i =>
+        if (l >= data_points(i)._1._2 && l <= data_points(i)._2._2)
+      {
+        var s = (data_points(i)._2._2 - data_points(i)._1._2 ) /(data_points(i)._2._1 - data_points(i)._1._1)
+        var c = data_points(i)._1._2
+        var x = data_points(i)._1._1
+        opt_t = (l + s * x - c) / s
+      }
     }
 
     //calculate amout of work per excutor
@@ -270,7 +286,7 @@ private object ParallelCollectionRDD {
         slices
       case _ =>
         val array = seq.toArray // To prevent O(n^2) operations for List etc
-        positions(array.length, weights).map { case (start, end) =>
+        positions(array.length, l_i).map { case (start, end) =>
           array.slice(start, end).toSeq
         }.toSeq
     }
