@@ -245,7 +245,7 @@ private object ParallelCollectionRDD {
     for(token <- tokens){
       l_i = l_i :+ calc_l(token, opt_t)
     }
-    var L = 0
+    var L: Double = 0.0
     l_i.foreach(L += _)
 
     //var weights = Array[Double]()
