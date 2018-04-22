@@ -17,10 +17,20 @@
 
 package org.apache.spark.deploy.worker
 
+import com.amazonaws.services.cloudwatch.AmazonCloudWatch
+import com.amazonaws.services.cloudwatch.AmazonCloudWatchClientBuilder
+import com.amazonaws.services.cloudwatch.model.Dimension
+import com.amazonaws.services.cloudwatch.model.GetMetricStatisticsRequest
+import com.amazonaws.services.cloudwatch.model.GetMetricStatisticsResult
+import com.amazonaws.services.cloudwatch.model.ListMetricsRequest
+import com.amazonaws.services.cloudwatch.model.ListMetricsResult
+import com.amazonaws.services.cloudwatch.model.Metric
+import com.amazonaws.util.EC2MetadataUtils
+
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
-import java.util.{Date, Locale, UUID}
+import java.util.{Arrays, Date, Locale, UUID}
 import java.util.concurrent._
 import java.util.concurrent.{Future => JFuture, ScheduledFuture => JScheduledFuture}
 
@@ -435,7 +445,41 @@ private[deploy] class Worker(
       handleRegisterResponse(msg)
 
     case SendHeartbeat =>
-      if (connected) { sendToMaster(Heartbeat(workerId, self)) }
+      if (connected) {
+        if (conf.getBoolean("spark.worker.aws", false)) {
+          // Collect tokens of the host instance
+          val cw = AmazonCloudWatchClientBuilder.defaultClient()
+          val instanceDimension = new Dimension()
+          instanceDimension.setName("InstanceId")
+          instanceDimension.setValue(EC2MetadataUtils.getInstanceId())
+
+          val request = new GetMetricStatisticsRequest()
+              .withStartTime(new Date(new Date().getTime() - 300000))
+              .withNamespace("AWS/EC2")
+              .withPeriod(60 * 60)
+              .withMetricName("CPUCreditBalance")
+              .withStatistics("Average")
+              .withDimensions(Arrays.asList(instanceDimension))
+              .withEndTime(new Date())
+
+          var credits: Int = 0
+          try {
+            val result = cw.getMetricStatistics(request)
+            credits= result.getDatapoints().get(0).getAverage().toInt
+            logInfo(s"Got current token $credits.")
+          }
+          catch {
+            case e: Exception =>
+              logInfo(s"Something wrong with gettting credits for " +
+                instanceDimension.getValue() + ": " + e.toString())
+              credits = 0
+          }
+          sendToMaster(Heartbeat(workerId, self, credits))
+        } else {
+          logInfo(s"Sending heartbeat to master assuming not running on AWS.")
+          sendToMaster(Heartbeat(workerId, self))
+        }
+      }
 
     case WorkDirCleanup =>
       // Spin up a separate thread (in a future) to do the dir cleanup; don't tie up worker
@@ -752,6 +796,7 @@ private[deploy] object Worker extends Logging {
     Utils.initDaemon(log)
     val conf = new SparkConf
     val args = new WorkerArguments(argStrings, conf)
+    conf.set("spark.worker.aws", args.aws)
     val rpcEnv = startRpcEnvAndEndpoint(args.host, args.port, args.webUiPort, args.cores,
       args.memory, args.masters, args.workDir, conf = conf)
     // With external shuffle service enabled, if we request to launch multiple workers on one host,

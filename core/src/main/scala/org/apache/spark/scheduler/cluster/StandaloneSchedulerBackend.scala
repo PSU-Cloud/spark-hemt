@@ -146,14 +146,16 @@ private[spark] class StandaloneSchedulerBackend(
       try {
         scheduler.error(reason)
       } finally {
-        // Ensure the application terminates, as we can no longer run jobs.
+        // Ensure the application terminates,listener as we can no longer run jobs.
         sc.stopInNewThread()
       }
     }
   }
 
   override def executorAdded(fullId: String, workerId: String, hostPort: String, cores: Int,
-    memory: Int) {
+    memory: Int, tokens: Int) {
+    sc.executorTokens.put(fullId, tokens)
+    sc.executorToHost.put(fullId, workerId)
     logInfo("Granted executor ID %s on hostPort %s with %d core(s), %s RAM".format(
       fullId, hostPort, cores, Utils.megabytesToString(memory)))
   }

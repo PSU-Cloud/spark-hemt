@@ -25,12 +25,14 @@ import scala.concurrent.Future
 import scala.util.{Failure, Success}
 import scala.util.control.NonFatal
 
-import org.apache.spark.SparkConf
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.deploy.{ApplicationDescription, ExecutorState}
 import org.apache.spark.deploy.DeployMessages._
 import org.apache.spark.deploy.master.Master
 import org.apache.spark.internal.Logging
 import org.apache.spark.rpc._
+import org.apache.spark.scheduler.TaskSchedulerImpl
+import org.apache.spark.scheduler.cluster.StandaloneSchedulerBackend
 import org.apache.spark.util.{RpcUtils, ThreadUtils}
 
 /**
@@ -168,11 +170,13 @@ private[spark] class StandaloneAppClient(
         markDead("Master removed our application: %s".format(message))
         stop()
 
-      case ExecutorAdded(id: Int, workerId: String, hostPort: String, cores: Int, memory: Int) =>
+      case ExecutorAdded(
+          id: Int, workerId: String, hostPort: String, cores: Int, memory: Int, initToken: Int) =>
         val fullId = appId + "/" + id
-        logInfo("Executor added: %s on %s (%s) with %d core(s)".format(fullId, workerId, hostPort,
-          cores))
-        listener.executorAdded(fullId, workerId, hostPort, cores, memory)
+        // TODO(yuquanshan): give initial tokens to the new executor in sc.
+        logInfo("Executor added: %s on %s (%s) with %d core(s) and %d CPU credits".format(
+          fullId, workerId, hostPort, cores, initToken))
+        listener.executorAdded(fullId, workerId, hostPort, cores, memory, initToken)
 
       case ExecutorUpdated(id, state, message, exitStatus, workerLost) =>
         val fullId = appId + "/" + id

@@ -206,7 +206,8 @@ class AppClientSuite
         workerId: String,
         hostPort: String,
         cores: Int,
-        memory: Int): Unit = {
+        memory: Int,
+        tokens: Int): Unit = {
       execAddedList.add(id)
     }
 

@@ -120,6 +120,7 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
     // if(opted) {} clause so that it can call a different overloaded
     // ParallelCollectionRDD.slice()?
     opted = true
+
     // TODO(nader): don't forget to update locationPrefs, using sc.executorTokens
     // (and maybe sc.executorToHost).
   }
