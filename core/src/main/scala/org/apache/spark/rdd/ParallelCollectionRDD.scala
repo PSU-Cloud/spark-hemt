@@ -24,6 +24,7 @@ import scala.collection.Map
 import scala.collection.immutable.NumericRange
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
+import scala.util.control.Breaks._
 
 import org.apache.spark._
 import org.apache.spark.serializer.JavaSerializer
@@ -98,7 +99,12 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
   // UPDATE: A parallel collection can be checkpointed to HDFS, which achieves this goal.
 
   override def getPartitions: Array[Partition] = {
-    val slices = ParallelCollectionRDD.slice(data, numSlices).toArray
+    var slices:Array[Seq[T]] = null
+    if (!opted) {
+      slices = ParallelCollectionRDD.slice(data, numSlices).toArray
+    } else {
+      slices = ParallelCollectionRDD.slice(data, sc).toArray
+    }
     slices.indices.map(i => new ParallelCollectionPartition(id, i, slices(i))).toArray
   }
 
@@ -113,6 +119,7 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
     // TODO(ata): change the behavior of getPartitions(), maybe set var opted to true, and add
     // if(opted) {} clause so that it can call a different overloaded
     // ParallelCollectionRDD.slice()?
+    opted = true
 
     // TODO(nader): don't forget to update locationPrefs, using sc.executorTokens
     // (and maybe sc.executorToHost).
@@ -172,6 +179,117 @@ private object ParallelCollectionRDD {
         val array = seq.toArray // To prevent O(n^2) operations for List etc
         positions(array.length, numSlices).map { case (start, end) =>
             array.slice(start, end).toSeq
+        }.toSeq
+    }
+  }
+
+  def slice[T: ClassTag](seq: Seq[T], sc: SparkContext): Seq[Seq[T]] = {
+    val executorTokens = sc.executorTokens
+    // Here we do the partition based on the values in executorTokens.
+
+    if (executorTokens.size() < 1) {
+      throw new IllegalArgumentException("Positive number of partitions required")
+    }
+    // Sequences need to be sliced at the same set of index positions for operations
+    // like RDD.zip() to behave as expected
+
+    var tokens = executorTokens.values().toArray.map(i => i.asInstanceOf[Int]).sorted
+    val numSlices = executorTokens.values().size()
+    val pi = numSlices //Totla amount of work done by single noge single vCPU
+    val bf = 0.2 // base performance of vCPU
+
+    def slope(i:Int): Double ={
+      var s = 0.0
+      for (token <- tokens){
+          if (token >= tokens(i+1)  )
+          {
+            s += 1
+          }
+        else {
+            s += bf
+          }
+        }
+       s
+    }
+
+    val l: Double = numSlices.asInstanceOf[Double] //What should be l?
+    var opt_t: Double = 0.0
+    var data_points = Array[((Double,Double),(Double,Double))]()
+    var last_point = ((0.0,0.0),(0.0,0.0))
+    (0 until tokens.length -1).foreach{i =>
+      if(tokens(i) != tokens(i+1)) {
+        var new_point = (last_point._2,
+        (tokens(i+1).toDouble, slope(i) * (tokens(i+1) - last_point._2._1 ) +last_point._2._2 ) )
+        data_points = data_points :+ new_point
+        last_point = new_point
+      }
+    }
+    data_points.indices.foreach{
+      i =>
+        if (l >= data_points(i)._1._2 && l <= data_points(i)._2._2)
+      {
+        var s = (data_points(i)._2._2 - data_points(i)._1._2 ) /(data_points(i)._2._1 - data_points(i)._1._1)
+        var c = data_points(i)._1._2
+        var x = data_points(i)._1._1
+        opt_t = (l + s * x - c) / s
+        break()
+      }
+    }
+
+    //calculate amout of work per excutor
+    def calc_l(token:Int, t: Double): Double ={
+      if (t <= token){return t}
+      else {return token + (t - token) * bf}
+    }
+
+    var l_i = Array[Double]()
+    for(token <- tokens){
+      l_i = l_i :+ calc_l(token, opt_t)
+    }
+    var L: Double = 0.0
+    l_i.foreach(L += _)
+
+    //var weights = Array[Double]()
+    //l_i.foreach(i=> weights = weights :+ math.round((i/L)*seq.length))
+
+
+    def positions(length: Long, l_i: Array[Double]): Iterator[(Int, Int)] = {
+      var start = 0
+      var end = 0
+      var offset = 0
+      (0 until numSlices).iterator.map { i =>
+        start = offset
+        end = (start + (l_i(i) * length) / L).toInt
+        offset = end
+        (start, end)
+      }
+    }
+    seq match {
+      case r: Range =>
+        positions(r.length, l_i).zipWithIndex.map { case ((start, end), index) =>
+          // If the range is inclusive, use inclusive range for the last slice
+          if (r.isInclusive && index == numSlices - 1) {
+            new Range.Inclusive(r.start + start * r.step, r.end, r.step)
+          }
+          else {
+            new Range(r.start + start * r.step, r.start + end * r.step, r.step)
+          }
+        }.toSeq.asInstanceOf[Seq[Seq[T]]]
+
+      case nr: NumericRange[_] =>
+        // For ranges of Long, Double, BigInteger, etc
+        val slices = new ArrayBuffer[Seq[T]](numSlices)
+        var r = nr
+        for ((start, end) <- positions(nr.length, l_i)) {
+          val sliceSize = end - start
+          slices += r.take(sliceSize).asInstanceOf[Seq[T]]
+          r = r.drop(sliceSize)
+        }
+        slices
+      case _ =>
+        val array = seq.toArray // To prevent O(n^2) operations for List etc
+        positions(array.length, l_i).map { case (start, end) =>
+          array.slice(start, end).toSeq
         }.toSeq
     }
   }
