@@ -454,9 +454,9 @@ private[deploy] class Worker(
           instanceDimension.setValue(EC2MetadataUtils.getInstanceId())
 
           val request = new GetMetricStatisticsRequest()
-              .withStartTime(new Date(new Date().getTime() - 300000))
+              .withStartTime(new Date(new Date().getTime() - 590000))
               .withNamespace("AWS/EC2")
-              .withPeriod(60 * 60)
+              .withPeriod(5 * 60)
               .withMetricName("CPUCreditBalance")
               .withStatistics("Average")
               .withDimensions(Arrays.asList(instanceDimension))
