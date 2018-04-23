@@ -198,75 +198,44 @@ private object ParallelCollectionRDD {
     val pi = numSlices //Totla amount of work done by single noge single vCPU
     val bf = 0.2 // base performance of vCPU
 
-    def slope(i:Int): Double ={
-      var s = 0.0
-      for (token <- tokens){
-          if (token >= tokens(i+1)  )
-          {
-            s += 1
-          }
-        else {
-            s += bf
-          }
+    def solvePieceWise(start: Int, passover: Double, tango: Double): Double = {
+      val slope: Double = tokens.filter(_ <= start).length * 0.2 + tokens.filter(_ > start).length
+      val newIndex = tokens.filter(_ <= start).length
+      if (newIndex == tokens.length) {
+        (tango - passover) / slope + start
+      } else {
+        val newPassover = slope * (tokens(newIndex) - start) + passover
+        if (newPassover >= tango) {
+          (tango - passover) / slope + start
+        } else {
+          solvePieceWise(tokens(newIndex), newPassover, tango)
         }
-       s
-    }
-
-    val l: Double = numSlices.asInstanceOf[Double] //What should be l?
-    var opt_t: Double = 0.0
-    var data_points = Array[((Double,Double),(Double,Double))]()
-    var last_point = ((0.0,0.0),(0.0,0.0))
-    (0 until tokens.length -1).foreach{i =>
-      if(tokens(i) != tokens(i+1)) {
-        var new_point = (last_point._2,
-        (tokens(i+1).toDouble, slope(i) * (tokens(i+1) - last_point._2._1 ) +last_point._2._2 ) )
-        data_points = data_points :+ new_point
-        last_point = new_point
-      }
-    }
-    data_points.indices.foreach{
-      i =>
-        if (l >= data_points(i)._1._2 && l <= data_points(i)._2._2)
-      {
-        var s = (data_points(i)._2._2 - data_points(i)._1._2 ) /(data_points(i)._2._1 - data_points(i)._1._1)
-        var c = data_points(i)._1._2
-        var x = data_points(i)._1._1
-        opt_t = (l + s * x - c) / s
-        break()
       }
     }
 
-    //calculate amout of work per excutor
-    def calc_l(token:Int, t: Double): Double ={
-      if (t <= token){return t}
-      else {return token + (t - token) * bf}
-    }
+    val finTime = solvePieceWise(0, 0.0, pi)
 
-    var l_i = Array[Double]()
-    for(token <- tokens){
-      l_i = l_i :+ calc_l(token, opt_t)
-    }
-    var L: Double = 0.0
-    l_i.foreach(L += _)
+    val weights = tokens.map { i =>
+      if (i > finTime) {
+        finTime.asInstanceOf[Double]
+      } else {
+        i + (finTime - i) * 0.2
+      }}.toArray.map(_.asInstanceOf[Double])
 
-    //var weights = Array[Double]()
-    //l_i.foreach(i=> weights = weights :+ math.round((i/L)*seq.length))
-
-
-    def positions(length: Long, l_i: Array[Double]): Iterator[(Int, Int)] = {
+    def positions(length: Long, ws: Array[Double]): Iterator[(Int, Int)] = {
       var start = 0
       var end = 0
       var offset = 0
       (0 until numSlices).iterator.map { i =>
         start = offset
-        end = (start + (l_i(i) * length) / L).toInt
+        end = (start + (ws(i) * length) / ws.sum).toInt
         offset = end
         (start, end)
       }
     }
     seq match {
       case r: Range =>
-        positions(r.length, l_i).zipWithIndex.map { case ((start, end), index) =>
+        positions(r.length, weights).zipWithIndex.map { case ((start, end), index) =>
           // If the range is inclusive, use inclusive range for the last slice
           if (r.isInclusive && index == numSlices - 1) {
             new Range.Inclusive(r.start + start * r.step, r.end, r.step)
@@ -280,7 +249,7 @@ private object ParallelCollectionRDD {
         // For ranges of Long, Double, BigInteger, etc
         val slices = new ArrayBuffer[Seq[T]](numSlices)
         var r = nr
-        for ((start, end) <- positions(nr.length, l_i)) {
+        for ((start, end) <- positions(nr.length, weights)) {
           val sliceSize = end - start
           slices += r.take(sliceSize).asInstanceOf[Seq[T]]
           r = r.drop(sliceSize)
@@ -288,7 +257,7 @@ private object ParallelCollectionRDD {
         slices
       case _ =>
         val array = seq.toArray // To prevent O(n^2) operations for List etc
-        positions(array.length, l_i).map { case (start, end) =>
+        positions(array.length, weights).map { case (start, end) =>
           array.slice(start, end).toSeq
         }.toSeq
     }
