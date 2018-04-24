@@ -18,6 +18,9 @@
 package org.apache.spark.rdd
 
 import java.io._
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
+import java.util.ArrayList
+import java.util.Comparator
 
 import scala.Serializable
 import scala.collection.Map
@@ -93,6 +96,12 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
   // getPreferedLocations
   private var opted = false
 
+  // optimized prefered locations
+  private var optLocationPrefs = locationPrefs
+
+  // Identify locations of executors with this prefix.
+  val executorLocationTag = "executor_"
+
   // TODO: Right now, each split sends along its full data, even if later down the RDD chain it gets
   // cached. It might be worthwhile to write the data to a file in the DFS and read it in the split
   // instead.
@@ -123,6 +132,30 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
 
     // TODO(nader): don't forget to update locationPrefs, using sc.executorTokens
     // (and maybe sc.executorToHost).
+
+    //create an ArrayList of class ExecutorPair
+    class ExecutorPair(val executorId: String, val tokens: Int)
+    var availableArray = new ArrayList[ExecutorPair]()
+    for (exeID <- sc.executorTokens.keySet().toArray()){
+      var exeIDasString = exeID.asInstanceOf[String]
+      availableArray.add(new ExecutorPair(exeIDasString, sc.executorTokens.get(exeIDasString)))
+    }
+
+    //sort availabeArray in ascending order
+    java.util.Collections.sort(availableArray, new java.util.Comparator[ExecutorPair]{
+      override def compare(p1:ExecutorPair, p2:ExecutorPair) = {
+        p1.tokens - p2.tokens
+      }
+    })
+
+    // after the array is sorted, assign each partition to an availabe executor
+    for ((partID, location) <- locationPrefs) {
+      var execID = availableArray.get(0)
+      var execHost = sc.executorToHost.get(execID)
+      optLocationPrefs = optLocationPrefs.updated(partID, Seq(execHost))
+      availableArray.remove(0)
+    }
+
   }
 
   override def compute(s: Partition, context: TaskContext): Iterator[T] = {
@@ -130,7 +163,11 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
   }
 
   override def getPreferredLocations(s: Partition): Seq[String] = {
-    locationPrefs.getOrElse(s.index, Nil)
+    if(!opted) {
+      locationPrefs.getOrElse(s.index, Nil)
+    }else{
+      optLocationPrefs.getOrElse(s.index,Nil)
+    }
   }
 }
 
