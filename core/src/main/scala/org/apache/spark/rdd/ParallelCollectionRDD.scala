@@ -193,7 +193,11 @@ private object ParallelCollectionRDD {
     // Sequences need to be sliced at the same set of index positions for operations
     // like RDD.zip() to behave as expected
 
-    var tokens = executorTokens.values().toArray.map(i => i.asInstanceOf[Int]).sorted
+    var tokens = executorTokens.values().toArray.map {i =>
+      val tmp = i.asInstanceOf[Int]
+      if (tmp - 15 > 0) tmp - 15 else 0
+    }.sorted
+    print("Ajusted tokens: " + tokens.mkString("(", ", ", ")"))
     val numSlices = executorTokens.values().size()
     val pi = numSlices //Totla amount of work done by single noge single vCPU
     val bf = 0.2 // base performance of vCPU
