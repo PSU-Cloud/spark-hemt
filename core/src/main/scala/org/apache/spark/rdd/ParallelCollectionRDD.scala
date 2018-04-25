@@ -108,7 +108,7 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
   // UPDATE: A parallel collection can be checkpointed to HDFS, which achieves this goal.
 
   override def getPartitions: Array[Partition] = {
-    var slices:Array[Seq[T]] = null
+    var slices: Array[Seq[T]] = null
     if (!opted) {
       slices = ParallelCollectionRDD.slice(data, numSlices).toArray
     } else {
@@ -133,25 +133,25 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
     // TODO(nader): don't forget to update locationPrefs, using sc.executorTokens
     // (and maybe sc.executorToHost).
 
-    //create an ArrayList of class ExecutorPair
+    // create an ArrayList of class ExecutorPair
     class ExecutorPair(val executorId: String, val tokens: Int)
-    var availableArray = new ArrayList[ExecutorPair]()
-    for (exeID <- sc.executorTokens.keySet().toArray()){
-      var exeIDasString = exeID.asInstanceOf[String]
+    val availableArray = new ArrayList[ExecutorPair]()
+    for (exeID <- sc.executorTokens.keySet().toArray()) {
+      val exeIDasString = exeID.asInstanceOf[String]
       availableArray.add(new ExecutorPair(exeIDasString, sc.executorTokens.get(exeIDasString)))
     }
 
-    //sort availabeArray in ascending order
+    // sort availabeArray in ascending order
     java.util.Collections.sort(availableArray, new java.util.Comparator[ExecutorPair]{
-      override def compare(p1:ExecutorPair, p2:ExecutorPair) = {
+      override def compare(p1: ExecutorPair, p2: ExecutorPair) = {
         p1.tokens - p2.tokens
       }
     })
 
     // after the array is sorted, assign each partition to an availabe executor
     for ((partID, location) <- locationPrefs) {
-      var execID = availableArray.get(0)
-      var execHost = sc.executorToHost.get(execID)
+      val execID = availableArray.get(0)
+      val execHost = sc.executorToHost.get(execID)
       optLocationPrefs = optLocationPrefs.updated(partID, Seq(execHost))
       availableArray.remove(0)
     }
@@ -163,10 +163,10 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
   }
 
   override def getPreferredLocations(s: Partition): Seq[String] = {
-    if(!opted) {
+    if (!opted) {
       locationPrefs.getOrElse(s.index, Nil)
-    }else{
-      optLocationPrefs.getOrElse(s.index,Nil)
+    } else {
+      optLocationPrefs.getOrElse(s.index, Nil)
     }
   }
 }
@@ -236,11 +236,11 @@ private object ParallelCollectionRDD {
     }.sorted
     print("Ajusted tokens: " + tokens.mkString("(", ", ", ")"))
     val numSlices = executorTokens.values().size()
-    val pi = numSlices //Totla amount of work done by single noge single vCPU
+    val pi = numSlices // Total amount of work done by single noge single vCPU
     val bf = 0.2 // base performance of vCPU
 
     def solvePieceWise(start: Int, passover: Double, tango: Double): Double = {
-      val slope: Double = tokens.filter(_ <= start).length * 0.2 + tokens.filter(_ > start).length
+      val slope: Double = tokens.filter(_ <= start).length * bf + tokens.filter(_ > start).length
       val newIndex = tokens.filter(_ <= start).length
       if (newIndex == tokens.length) {
         (tango - passover) / slope + start
@@ -260,7 +260,7 @@ private object ParallelCollectionRDD {
       if (i > finTime) {
         finTime.asInstanceOf[Double]
       } else {
-        i + (finTime - i) * 0.2
+        i + (finTime - i) * bf
       }}.toArray.map(_.asInstanceOf[Double])
 
     def positions(length: Long, ws: Array[Double]): Iterator[(Int, Int)] = {
