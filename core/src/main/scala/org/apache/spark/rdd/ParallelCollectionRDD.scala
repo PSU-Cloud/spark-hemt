@@ -27,7 +27,6 @@ import scala.collection.Map
 import scala.collection.immutable.NumericRange
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
-import scala.util.control.Breaks._
 
 import org.apache.spark._
 import org.apache.spark.serializer.JavaSerializer
@@ -113,6 +112,8 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
       slices = ParallelCollectionRDD.slice(data, numSlices).toArray
     } else {
       slices = ParallelCollectionRDD.slice(data, sc).toArray
+      // Update preferred location after the optimized partition
+      updatePrefLoc()
     }
     slices.indices.map(i => new ParallelCollectionPartition(id, i, slices(i))).toArray
   }
@@ -129,7 +130,9 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
     // if(opted) {} clause so that it can call a different overloaded
     // ParallelCollectionRDD.slice()?
     opted = true
+  }
 
+  private def updatePrefLoc(): Unit = {
     // TODO(nader): don't forget to update locationPrefs, using sc.executorTokens
     // (and maybe sc.executorToHost).
 
@@ -151,11 +154,11 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
     // after the array is sorted, assign each partition to an availabe executor
     for ((partID, location) <- locationPrefs) {
       val execID = availableArray.get(0)
-      val execHost = sc.executorToHost.get(execID)
+      val execHost = executorLocationTag + s"${sc.executorToHost.get(execID)}_$execID"
       optLocationPrefs = optLocationPrefs.updated(partID, Seq(execHost))
       availableArray.remove(0)
     }
-
+    println("Updated pref locations: " + optLocationPrefs.toString)
   }
 
   override def compute(s: Partition, context: TaskContext): Iterator[T] = {
@@ -234,7 +237,7 @@ private object ParallelCollectionRDD {
       val tmp = i.asInstanceOf[Int]
       if (tmp - 15 > 0) tmp - 15 else 0
     }.sorted
-    print("Ajusted tokens: " + tokens.mkString("(", ", ", ")"))
+    println("Ajusted tokens: " + tokens.mkString("(", ", ", ")"))
     val numSlices = executorTokens.values().size()
     val pi = numSlices // Total amount of work done by single noge single vCPU
     val bf = 0.2 // base performance of vCPU
