@@ -27,6 +27,7 @@ import scala.collection.Map
 import scala.collection.immutable.NumericRange
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
+import scala.util.Sorting
 
 import org.apache.spark._
 import org.apache.spark.serializer.JavaSerializer
@@ -137,26 +138,30 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
     // (and maybe sc.executorToHost).
 
     // create an ArrayList of class ExecutorPair
-    class ExecutorPair(val executorId: String, val tokens: Int)
-    val availableArray = new ArrayList[ExecutorPair]()
+    case class ExecutorPair(val executorId: String, val tokens: Int)
+    var availableArray = Array[ExecutorPair]()
     for (exeID <- sc.executorTokens.keySet().toArray()) {
       val exeIDasString = exeID.asInstanceOf[String]
-      availableArray.add(new ExecutorPair(exeIDasString, sc.executorTokens.get(exeIDasString)))
+      availableArray = availableArray :+ ExecutorPair(
+        exeIDasString, sc.executorTokens.get(exeIDasString))
     }
 
     // sort availabeArray in ascending order
-    java.util.Collections.sort(availableArray, new java.util.Comparator[ExecutorPair]{
-      override def compare(p1: ExecutorPair, p2: ExecutorPair) = {
-        p1.tokens - p2.tokens
-      }
-    })
+    object PairOrdering extends Ordering[ExecutorPair] {
+      def compare(a: ExecutorPair, b: ExecutorPair) = a.tokens compare b.tokens
+    }
+    Sorting.quickSort(availableArray)(PairOrdering)
 
     // after the array is sorted, assign each partition to an availabe executor
-    for ((partID, location) <- locationPrefs) {
-      val execID = availableArray.get(0)
+    for ((pair, partID) <- availableArray.zipWithIndex) {
+      val execID = pair.executorId
       val execHost = executorLocationTag + s"${sc.executorToHost.get(execID)}_$execID"
-      optLocationPrefs = optLocationPrefs.updated(partID, Seq(execHost))
-      availableArray.remove(0)
+      if (optLocationPrefs.contains(partID)) {
+        optLocationPrefs = optLocationPrefs.updated(
+          partID, optLocationPrefs(partID) :+ execHost)
+      } else {
+        optLocationPrefs += (partID -> Seq(execHost))
+      }
     }
     println("Updated pref locations: " + optLocationPrefs.toString)
   }
@@ -166,11 +171,7 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
   }
 
   override def getPreferredLocations(s: Partition): Seq[String] = {
-    if (!opted) {
-      locationPrefs.getOrElse(s.index, Nil)
-    } else {
-      optLocationPrefs.getOrElse(s.index, Nil)
-    }
+    optLocationPrefs.getOrElse(s.index, Nil)
   }
 }
 
