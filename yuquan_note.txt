@@ -1,3 +1,0 @@
-Plan on 3/20/2018:
-1. build complile this repo;
-2. get familiar with the commit workflowt with teammates.
