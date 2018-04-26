@@ -238,7 +238,12 @@ private object ParallelCollectionRDD {
 
     val numSlices = executorTokens.values().size()
     val pi = numSlices // Total amount of work done by single node single vCPU
-    val bf = 0.2 // base performance of vCPU
+    // baseline performance of vCPU
+    // TODO(yuquanshan): So far the baseline performance is hardcoded and only true
+    // for a certain AWS instance (t2.medium) and need to change if using other types
+    // of instances. So we need to let our code to automatically detect instance type
+    // and adaptively change the baseline performance.
+    val bf = 0.4
 
     def solvePieceWise(start: Int, passover: Double, tango: Double): Double = {
       val slope: Double = tokens.count(_ <= start) * bf + tokens.count(_ > start)
