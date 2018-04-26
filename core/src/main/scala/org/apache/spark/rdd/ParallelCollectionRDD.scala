@@ -18,9 +18,6 @@
 package org.apache.spark.rdd
 
 import java.io._
-import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
-import java.util.ArrayList
-import java.util.Comparator
 
 import scala.Serializable
 import scala.collection.Map
@@ -163,7 +160,7 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
         optLocationPrefs += (partID -> Seq(execHost))
       }
     }
-    println("Updated pref locations: " + optLocationPrefs.toString)
+
   }
 
   override def compute(s: Partition, context: TaskContext): Iterator[T] = {
@@ -234,18 +231,18 @@ private object ParallelCollectionRDD {
     // Sequences need to be sliced at the same set of index positions for operations
     // like RDD.zip() to behave as expected
 
-    var tokens = executorTokens.values().toArray.map {i =>
+    val tokens = executorTokens.values().toArray.map {i =>
       val tmp = i.asInstanceOf[Int]
       if (tmp - 15 > 0) tmp - 15 else 0
     }.sorted
-    println("Ajusted tokens: " + tokens.mkString("(", ", ", ")"))
+
     val numSlices = executorTokens.values().size()
-    val pi = numSlices // Total amount of work done by single noge single vCPU
+    val pi = numSlices // Total amount of work done by single node single vCPU
     val bf = 0.2 // base performance of vCPU
 
     def solvePieceWise(start: Int, passover: Double, tango: Double): Double = {
-      val slope: Double = tokens.filter(_ <= start).length * bf + tokens.filter(_ > start).length
-      val newIndex = tokens.filter(_ <= start).length
+      val slope: Double = tokens.count(_ <= start) * bf + tokens.count(_ > start)
+      val newIndex = tokens.count(_ <= start)
       if (newIndex == tokens.length) {
         (tango - passover) / slope + start
       } else {

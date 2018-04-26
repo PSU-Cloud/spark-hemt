@@ -246,6 +246,11 @@ abstract class RDD[T: ClassTag](
   /**
    * Get the array of partitions of this RDD, taking into account whether the
    * RDD is checkpointed or not.
+   * TODO(yuquanshan): partitions are cached when we call rdd.partitions once.
+   * Then here comes an issue if dynamic optimized partition is used:
+   * suppose we call partitions on a rdd one hour later, then the resulting partitions are not
+   * optimally partitioned under current circumstance but the one a hour ago. So do we want to
+   * cache the partitions in partitions_ if we use dynamic optimized partition?
    */
   final def partitions: Array[Partition] = {
     checkpointRDD.map(_.partitions).getOrElse {

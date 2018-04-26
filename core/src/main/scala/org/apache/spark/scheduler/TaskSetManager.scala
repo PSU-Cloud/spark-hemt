@@ -389,6 +389,7 @@ private[spark] class TaskSetManager(
     : Option[(Int, TaskLocality.Value, Boolean)] =
   {
     for (index <- dequeueTaskFromList(execId, host, getPendingTasksForExecutor(execId))) {
+      logInfo(s"Matching task $index with executor $execId.")
       return Some((index, TaskLocality.PROCESS_LOCAL, false))
     }
 
