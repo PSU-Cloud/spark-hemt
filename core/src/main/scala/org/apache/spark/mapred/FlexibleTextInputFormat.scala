@@ -21,13 +21,16 @@ import org.apache.hadoop.fs.{FileStatus, FileSystem, LocatedFileStatus}
 import org.apache.hadoop.mapred.{FileSplit, InputSplit, JobConf, TextInputFormat}
 import org.apache.hadoop.net.NetworkTopology
 
+import org.apache.spark.internal.Logging
+
 /**
  * Unlike TextInputFormat that is used in original Spark, this flexible InputFormat allows:
  * 1. a split whose size is larger than block size;
  * 2. splitting a file according to a certain array of weights - splitWeights.
  */
-class FlexibleTextInputFormat extends TextInputFormat {
+class FlexibleTextInputFormat extends TextInputFormat with Logging {
   private var splitWeights = Array[Double]()
+  logWarning("FlexibleTextInputFormat is used.")
 
   def updateSplitWeights(weights: Array[Double]): Unit = {
     splitWeights = weights
