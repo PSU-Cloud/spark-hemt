@@ -21,13 +21,16 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.{Date, Locale}
 
-import scala.collection.immutable.Map
+import scala.collection.immutable.{HashMap, Map}
 import scala.reflect.ClassTag
+import scala.util.Sorting
+
 import org.apache.hadoop.conf.{Configurable, Configuration}
 import org.apache.hadoop.mapred._
 import org.apache.hadoop.mapred.lib.CombineFileSplit
 import org.apache.hadoop.mapreduce.TaskType
 import org.apache.hadoop.util.ReflectionUtils
+
 import org.apache.spark._
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.broadcast.Broadcast
@@ -137,6 +140,12 @@ class HadoopRDD[K, V](
 
   private var opted = false
 
+  // optimized prefered locations
+  private var optLocationPrefs = new HashMap[Int, Seq[String]]()
+
+  // Identify locations of executors with this prefix.
+  val executorLocationTag = "executor_"
+
   // Returns a JobConf that will be used on slaves to obtain input splits for Hadoop reads.
   protected def getJobConf(): JobConf = {
     val conf: Configuration = broadcastedConf.value.value
@@ -201,6 +210,8 @@ class HadoopRDD[K, V](
     val allInputSplits = if (!opted) {
       getInputFormat(jobConf).getSplits(jobConf, minPartitions)
     } else {
+      // update preferred location a priori
+      updatePrefLoc()
       val infmt = getInputFormat(jobConf)
       infmt match {
         case finfmt: FlexibleTextInputFormat =>
@@ -265,6 +276,35 @@ class HadoopRDD[K, V](
 
   override def optRepartition(): Unit = {
     opted = true
+  }
+
+  private def updatePrefLoc(): Unit = {
+    // create an ArrayList of class ExecutorPair
+    case class ExecutorPair(val executorId: String, val tokens: Int)
+    var availableArray = Array[ExecutorPair]()
+    for (exeID <- sc.executorTokens.keySet().toArray()) {
+      val exeIDasString = exeID.asInstanceOf[String]
+      availableArray = availableArray :+ ExecutorPair(
+        exeIDasString, sc.executorTokens.get(exeIDasString))
+    }
+
+    // sort availabeArray in ascending order
+    object PairOrdering extends Ordering[ExecutorPair] {
+      def compare(a: ExecutorPair, b: ExecutorPair) = a.tokens compare b.tokens
+    }
+    Sorting.quickSort(availableArray)(PairOrdering)
+
+    // after the array is sorted, assign each partition to an availabe executor
+    for ((pair, partID) <- availableArray.zipWithIndex) {
+      val execID = pair.executorId
+      val execHost = executorLocationTag + s"${sc.executorToHost.get(execID)}_$execID"
+      if (optLocationPrefs.contains(partID)) {
+        optLocationPrefs = optLocationPrefs.updated(
+          partID, optLocationPrefs(partID) :+ execHost)
+      } else {
+        optLocationPrefs += (partID -> Seq(execHost))
+      }
+    }
   }
 
   override def compute(theSplit: Partition, context: TaskContext): InterruptibleIterator[(K, V)] = {
@@ -387,13 +427,17 @@ class HadoopRDD[K, V](
   }
 
   override def getPreferredLocations(split: Partition): Seq[String] = {
-    val hsplit = split.asInstanceOf[HadoopPartition].inputSplit.value
-    val locs = hsplit match {
-      case lsplit: InputSplitWithLocationInfo =>
-        HadoopRDD.convertSplitLocationInfo(lsplit.getLocationInfo)
-      case _ => None
+    if (!opted) {
+      val hsplit = split.asInstanceOf[HadoopPartition].inputSplit.value
+      val locs = hsplit match {
+        case lsplit: InputSplitWithLocationInfo =>
+          HadoopRDD.convertSplitLocationInfo(lsplit.getLocationInfo)
+        case _ => None
+      }
+      locs.getOrElse(hsplit.getLocations.filter(_ != "localhost"))
+    } else {
+      optLocationPrefs.getOrElse(split.index, Nil)
     }
-    locs.getOrElse(hsplit.getLocations.filter(_ != "localhost"))
   }
 
   override def checkpoint() {
