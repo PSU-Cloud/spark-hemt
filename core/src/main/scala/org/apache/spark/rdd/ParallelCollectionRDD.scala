@@ -233,6 +233,8 @@ private object ParallelCollectionRDD {
 
     val tokens = executorTokens.values().toArray.map {i =>
       val tmp = i.asInstanceOf[Int]
+      // TODO(yuquanshan): this token offset is the ad-hoc solution against the inconsistency
+      // in the AWS official doc (no way we can see 0 token scenario...).
       if (tmp - 15 > 0) tmp - 15 else 0
     }.sorted
 

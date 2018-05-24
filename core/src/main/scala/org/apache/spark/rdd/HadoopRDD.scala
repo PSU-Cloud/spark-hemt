@@ -23,19 +23,18 @@ import java.util.{Date, Locale}
 
 import scala.collection.immutable.Map
 import scala.reflect.ClassTag
-
 import org.apache.hadoop.conf.{Configurable, Configuration}
 import org.apache.hadoop.mapred._
 import org.apache.hadoop.mapred.lib.CombineFileSplit
 import org.apache.hadoop.mapreduce.TaskType
 import org.apache.hadoop.util.ReflectionUtils
-
 import org.apache.spark._
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.deploy.SparkHadoopUtil
 import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config._
+import org.apache.spark.mapred.FlexibleTextInputFormat
 import org.apache.spark.rdd.HadoopRDD.HadoopMapPartitionsWithSplitRDD
 import org.apache.spark.scheduler.{HDFSCacheTaskLocation, HostTaskLocation}
 import org.apache.spark.storage.StorageLevel
@@ -136,6 +135,8 @@ class HadoopRDD[K, V](
 
   private val ignoreEmptySplits = sparkContext.conf.get(HADOOP_RDD_IGNORE_EMPTY_SPLITS)
 
+  private var opted = false
+
   // Returns a JobConf that will be used on slaves to obtain input splits for Hadoop reads.
   protected def getJobConf(): JobConf = {
     val conf: Configuration = broadcastedConf.value.value
@@ -197,8 +198,60 @@ class HadoopRDD[K, V](
     val jobConf = getJobConf()
     // add the credentials here as this can be called before SparkContext initialized
     SparkHadoopUtil.get.addCredentials(jobConf)
-    val allInputSplits = getInputFormat(jobConf).getSplits(jobConf, minPartitions)
-    val inputSplits = if (ignoreEmptySplits) {
+    val allInputSplits = if (!opted) {
+      getInputFormat(jobConf).getSplits(jobConf, minPartitions)
+    } else {
+      val infmt = getInputFormat(jobConf)
+      infmt match {
+        case finfmt: FlexibleTextInputFormat =>
+          val tokens = sc.executorTokens.values ().toArray.map { i =>
+            val tmp = i.asInstanceOf[Int]
+            // TODO(yuquanshan): this token offset is the ad-hoc solution against the inconsistency
+            // in the AWS official doc (no way we can see 0 token scenario...).
+            if (tmp - 15 > 0) tmp - 15 else 0
+          }.sorted
+
+          val numSlices = tokens.length
+          val pi = numSlices
+          // baseline performance of vCPU
+          // TODO(yuquanshan): So far the baseline performance is hardcoded and only true
+          // for a certain AWS instance (t2.medium) and need to change if using other types
+          // of instances. So we need to let our code to automatically detect instance type
+          // and adaptively change the baseline performance.
+          val bf = 0.4
+
+          def solvePieceWise (start: Int, passover: Double, tango: Double): Double = {
+            val slope: Double = tokens.count (_ <= start) * bf + tokens.count (_ > start)
+            val newIndex = tokens.count (_ <= start)
+            if (newIndex == tokens.length) {
+              (tango - passover) / slope + start
+            } else {
+              val newPassover = slope * (tokens (newIndex) - start) + passover
+              if (newPassover >= tango) {
+                (tango - passover) / slope + start
+              } else {
+                solvePieceWise (tokens (newIndex), newPassover, tango)
+              }
+            }
+          }
+
+          val finTime = solvePieceWise(0, 0.0, pi)
+
+          val weights = tokens.map { i =>
+            if (i > finTime) {
+              finTime.asInstanceOf[Double]
+            } else {
+              i + (finTime - i) * bf
+            }
+          }.toArray.map(_.asInstanceOf[Double])
+
+          finfmt.updateSplitWeights(weights)
+          finfmt.getSplits(jobConf, minPartitions)
+        case _ =>
+          infmt.getSplits(jobConf, minPartitions)
+      }
+    }
+    val inputSplits = if (!opted && ignoreEmptySplits) {
       allInputSplits.filter(_.getLength > 0)
     } else {
       allInputSplits
@@ -208,6 +261,10 @@ class HadoopRDD[K, V](
       array(i) = new HadoopPartition(id, i, inputSplits(i))
     }
     array
+  }
+
+  override def optRepartition(): Unit = {
+    opted = true
   }
 
   override def compute(theSplit: Partition, context: TaskContext): InterruptibleIterator[(K, V)] = {

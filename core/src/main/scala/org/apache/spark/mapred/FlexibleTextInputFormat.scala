@@ -65,6 +65,7 @@ class FlexibleTextInputFormat extends TextInputFormat with Logging {
               // see FileInputFormat.getSplitHostsAndCachedHosts
               val splitHosts = getSplitHosts(blkLocations, accLen, splitSize, clusterMap)
               splits = splits :+ makeSplit(path, accLen, splitSize, splitHosts)
+              logWarning(s"Split $splitSize out.")
               accLen += splitSize
             }
             val splitHosts = getSplitHosts(blkLocations, accLen, length - accLen, clusterMap)
