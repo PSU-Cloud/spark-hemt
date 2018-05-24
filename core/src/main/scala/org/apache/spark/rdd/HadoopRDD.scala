@@ -91,7 +91,7 @@ private[spark] class HadoopPartition(rddId: Int, override val index: Int, s: Inp
  */
 @DeveloperApi
 class HadoopRDD[K, V](
-    sc: SparkContext,
+    @transient private val sc: SparkContext,
     broadcastedConf: Broadcast[SerializableConfiguration],
     initLocalJobConfFuncOpt: Option[JobConf => Unit],
     inputFormatClass: Class[_ <: InputFormat[K, V]],
