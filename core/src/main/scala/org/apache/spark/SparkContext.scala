@@ -842,8 +842,13 @@ class SparkContext(config: SparkConf) extends Logging {
       path: String,
       minPartitions: Int = defaultMinPartitions): RDD[String] = withScope {
     assertNotStopped()
-    hadoopFile(path, classOf[FlexibleTextInputFormat], classOf[LongWritable], classOf[Text],
-      minPartitions).map(pair => pair._2.toString).setName(path)
+    if (conf.getBoolean("spark.hadoop.io.flexible", true)) {
+      hadoopFile(path, classOf[FlexibleTextInputFormat], classOf[LongWritable], classOf[Text],
+        minPartitions).map(pair => pair._2.toString).setName(path)
+    } else {
+      hadoopFile(path, classOf[TextInputFormat], classOf[LongWritable], classOf[Text],
+        minPartitions).map(pair => pair._2.toString).setName(path)
+    }
   }
 
   /**
