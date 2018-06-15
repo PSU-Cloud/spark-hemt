@@ -229,7 +229,7 @@ class HadoopRDD[K, V](
           // for a certain AWS instance (t2.medium) and need to change if using other types
           // of instances. So we need to let our code to automatically detect instance type
           // and adaptively change the baseline performance.
-          val bf = 0.4
+          val bf = 0.3
 
           def solvePieceWise (start: Int, passover: Double, tango: Double): Double = {
             val slope: Double = tokens.count (_ <= start) * bf + tokens.count (_ > start)
