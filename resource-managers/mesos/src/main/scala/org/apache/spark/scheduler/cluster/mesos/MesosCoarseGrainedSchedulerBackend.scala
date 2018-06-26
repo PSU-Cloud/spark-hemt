@@ -204,7 +204,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
       ""
     }
 
-    val driver = createSchedulerDriver(
+    val driver = createSchedulerDriverImpl(
       master,
       MesosCoarseGrainedSchedulerBackend.this,
       sc.sparkUser,
@@ -213,7 +213,9 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
       sc.conf.getOption("spark.mesos.driver.webui.url").orElse(sc.ui.map(_.webUrl)),
       None,
       Some(sc.conf.get(DRIVER_FAILOVER_TIMEOUT)),
-      sc.conf.getOption("spark.mesos.driver.frameworkId").map(_ + suffix)
+      sc.conf.getOption("spark.mesos.driver.frameworkId").map(_ + suffix),
+      true,
+      true
     )
 
     launcherBackend.setState(SparkAppHandle.State.SUBMITTED)

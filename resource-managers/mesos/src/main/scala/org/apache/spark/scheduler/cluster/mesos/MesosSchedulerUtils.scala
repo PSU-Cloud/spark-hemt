@@ -73,6 +73,22 @@ trait MesosSchedulerUtils extends Logging {
       checkpoint: Option[Boolean] = None,
       failoverTimeout: Option[Double] = None,
       frameworkId: Option[String] = None): SchedulerDriver = {
+    createSchedulerDriverImpl(masterUrl, scheduler, sparkUser, appName, conf, webuiUrl,
+      checkpoint, failoverTimeout, frameworkId, false, false)
+  }
+
+  protected def createSchedulerDriverImpl(
+      masterUrl: String,
+      scheduler: Scheduler,
+      sparkUser: String,
+      appName: String,
+      conf: SparkConf,
+      webuiUrl: Option[String] = None,
+      checkpoint: Option[Boolean] = None,
+      failoverTimeout: Option[Double] = None,
+      frameworkId: Option[String] = None,
+      dvEnabled: Boolean = false,
+      dcapEnabled: Boolean = false): SchedulerDriver = {
     val fwInfoBuilder = FrameworkInfo.newBuilder().setUser(sparkUser).setName(appName)
     fwInfoBuilder.setHostname(Option(conf.getenv("SPARK_PUBLIC_DNS")).getOrElse(
       conf.get(DRIVER_HOST_ADDRESS)))
@@ -90,6 +106,35 @@ trait MesosSchedulerUtils extends Logging {
     if (maxGpus > 0) {
       fwInfoBuilder.addCapabilities(Capability.newBuilder().setType(Capability.Type.GPU_RESOURCES))
     }
+
+    // add D-vector
+    if (dvEnabled) {
+      val cpus = conf.getDouble("spark.executor.cores", 1)
+      val mem = conf.getSizeAsMb("spark.executor.memory", "1024").toInt +
+        conf.getInt("spark.mesos.executor.memoryOverhead",
+          math.max(MEMORY_OVERHEAD_FRACTION * conf.getSizeAsMb("spark.executor.memory",
+            "1024").toInt, MEMORY_OVERHEAD_MINIMUM).toInt)
+      fwInfoBuilder.setDvEnabled(true)
+      fwInfoBuilder.setDvector(fwInfoBuilder.getDvectorBuilder.setCpus(cpus).setMem(mem).build())
+    }
+
+    // add demand cap
+    if (dcapEnabled) {
+      fwInfoBuilder.setDcapEnabled(true)
+      if (conf.contains("spark.mesos.cap.cores")) {
+        if (conf.contains("spark.mesos.cap.memory")) {
+          fwInfoBuilder.setDcap(
+              fwInfoBuilder.getDcapBuilder.setCpus(
+              conf.getDouble("spark.mesos.cap.cores", 10000.0)).setMem(
+              conf.getSizeAsMb("spark.mesos.cap.memory", "2147483647").toInt))
+        } else {
+          fwInfoBuilder.setDcap(
+            fwInfoBuilder.getDcapBuilder.setCpus(
+              conf.getDouble("spark.mesos.cap.cores", 10000.0)))
+        }
+      }
+    }
+
     val credBuilder = buildCredentials(conf, fwInfoBuilder)
     if (credBuilder.hasPrincipal) {
       new MesosSchedulerDriver(
