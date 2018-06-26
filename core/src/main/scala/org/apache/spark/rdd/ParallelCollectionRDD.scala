@@ -91,7 +91,7 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
     extends RDD[T](sc, Nil) {
   // a flag indicating whether optRepartition() has been called, it might be used in
   // getPreferedLocations
-  private var opted = false
+  private var opted = sc.conf.getBoolean("spark.rdd.optRepart", false)
 
   // optimized prefered locations
   private var optLocationPrefs = locationPrefs

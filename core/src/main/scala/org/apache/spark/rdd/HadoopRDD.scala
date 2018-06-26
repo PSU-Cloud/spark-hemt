@@ -138,7 +138,7 @@ class HadoopRDD[K, V](
 
   private val ignoreEmptySplits = sparkContext.conf.get(HADOOP_RDD_IGNORE_EMPTY_SPLITS)
 
-  private var opted = false
+  private var opted = sparkContext.conf.getBoolean("spark.rdd.optRepart", false)
 
   // optimized prefered locations
   private var optLocationPrefs = new HashMap[Int, Seq[String]]()
