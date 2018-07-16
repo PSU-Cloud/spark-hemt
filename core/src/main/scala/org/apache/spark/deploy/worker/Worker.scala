@@ -465,18 +465,18 @@ private[deploy] class Worker(
           var credits: Int = 0
           try {
             val result = cw.getMetricStatistics(request)
-            credits= result.getDatapoints().get(0).getAverage().toInt
-            logInfo(s"Got current token $credits.")
+            credits = result.getDatapoints().get(0).getAverage().toInt
+            logDebug(s"Got current token $credits.")
           }
           catch {
             case e: Exception =>
-              logInfo(s"Something wrong with gettting credits for " +
+              logWarning(s"Something wrong with gettting credits for " +
                 instanceDimension.getValue() + ": " + e.toString())
               credits = 0
           }
           sendToMaster(Heartbeat(workerId, self, credits))
         } else {
-          logInfo(s"Sending heartbeat to master assuming not running on AWS.")
+          logDebug(s"Sending heartbeat to master assuming not running on AWS.")
           sendToMaster(Heartbeat(workerId, self))
         }
       }
