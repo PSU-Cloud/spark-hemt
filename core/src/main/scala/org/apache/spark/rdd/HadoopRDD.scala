@@ -51,6 +51,8 @@ private[spark] class HadoopPartition(rddId: Int, override val index: Int, s: Inp
 
   val inputSplit = new SerializableWritable[InputSplit](s)
 
+  val rawSplit = s
+
   override def hashCode(): Int = 31 * (31 + rddId) + index
 
   override def equals(other: Any): Boolean = super.equals(other)
@@ -229,7 +231,7 @@ class HadoopRDD[K, V](
           // for a certain AWS instance (t2.medium) and need to change if using other types
           // of instances. So we need to let our code to automatically detect instance type
           // and adaptively change the baseline performance.
-          val bf = 0.3
+          val bf = sc.conf.getDouble("spark.debug.baseline", 0.355555)
 
           def solvePieceWise (start: Int, passover: Double, tango: Double): Double = {
             val slope: Double = tokens.count (_ <= start) * bf + tokens.count (_ > start)
@@ -311,7 +313,7 @@ class HadoopRDD[K, V](
     val iter = new NextIterator[(K, V)] {
 
       private val split = theSplit.asInstanceOf[HadoopPartition]
-      logInfo("Input split: " + split.inputSplit)
+      logInfo("Input split: " + split.inputSplit + " nodes: " + split.rawSplit.getLocations)
       private val jobConf = getJobConf()
 
       private val inputMetrics = context.taskMetrics().inputMetrics
