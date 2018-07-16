@@ -51,8 +51,6 @@ private[spark] class HadoopPartition(rddId: Int, override val index: Int, s: Inp
 
   val inputSplit = new SerializableWritable[InputSplit](s)
 
-  val rawSplit = s
-
   override def hashCode(): Int = 31 * (31 + rddId) + index
 
   override def equals(other: Any): Boolean = super.equals(other)
@@ -313,7 +311,7 @@ class HadoopRDD[K, V](
     val iter = new NextIterator[(K, V)] {
 
       private val split = theSplit.asInstanceOf[HadoopPartition]
-      logInfo("Input split: " + split.inputSplit + " nodes: " + split.rawSplit.getLocations)
+      logInfo("Input split: " + split.inputSplit + " nodes: " + split.inputSplit.value.getLocations)
       private val jobConf = getJobConf()
 
       private val inputMetrics = context.taskMetrics().inputMetrics
