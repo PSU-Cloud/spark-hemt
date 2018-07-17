@@ -29,9 +29,7 @@ import scala.concurrent.duration._
 import scala.language.existentials
 import scala.language.postfixOps
 import scala.util.control.NonFatal
-
 import org.apache.commons.lang3.SerializationUtils
-
 import org.apache.spark._
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.executor.TaskMetrics
@@ -39,7 +37,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.internal.config
 import org.apache.spark.network.util.JavaUtils
 import org.apache.spark.partial.{ApproximateActionListener, ApproximateEvaluator, PartialResult}
-import org.apache.spark.rdd.{RDD, RDDCheckpointData}
+import org.apache.spark.rdd.{HadoopPartition, RDD, RDDCheckpointData}
 import org.apache.spark.rpc.RpcTimeout
 import org.apache.spark.storage._
 import org.apache.spark.storage.BlockManagerMessages.BlockManagerHeartbeat
@@ -1034,6 +1032,15 @@ class DAGScheduler(
         }
 
         partitions = stage.rdd.partitions
+
+        // yuquanshan: print debug info of HadoopPartitions
+        for (x <- partitions) {
+          x match {
+            case x: HadoopPartition =>
+              logWarning(s"Partition ${x.index}" +
+                s"nodes: ${x.inputSplit.value.getLocations.mkString("[", ",", "]")}")
+          }
+        }
       }
 
       taskBinary = sc.broadcast(taskBinaryBytes)
