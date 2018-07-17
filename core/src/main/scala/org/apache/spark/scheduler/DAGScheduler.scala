@@ -1039,6 +1039,7 @@ class DAGScheduler(
             case x: HadoopPartition =>
               logWarning(s"Partition ${x.index}" +
                 s"nodes: ${x.inputSplit.value.getLocations.mkString("[", ",", "]")}")
+            case _ =>
           }
         }
       }
