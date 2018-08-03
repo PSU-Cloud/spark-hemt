@@ -156,6 +156,8 @@ private[spark] class StandaloneSchedulerBackend(
     memory: Int, tokens: Int) {
     sc.executorTokens.put(fullId.split("/")(1), tokens)
     sc.executorToHost.put(fullId.split("/")(1), workerId)
+    sc.executorBase.put(fullId.split("/")(1),
+      conf.getDouble("spark.debug.baseline", 0.355555))
     logInfo("Granted executor ID %s on hostPort %s with %d core(s), %s RAM".format(
       fullId, hostPort, cores, Utils.megabytesToString(memory)))
   }

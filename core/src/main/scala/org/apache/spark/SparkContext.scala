@@ -345,6 +345,8 @@ class SparkContext(config: SparkConf) extends Logging {
    */
   val executorToHost: ConcurrentMap[String, String] = new ConcurrentHashMap[String, String]()
 
+  val executorBase: ConcurrentHashMap[String, Double] = new ConcurrentHashMap[String, Double]()
+
   // Thread Local variable that can be used by users to pass information down the stack
   protected[spark] val localProperties = new InheritableThreadLocal[Properties] {
     override protected def childValue(parent: Properties): Properties = {

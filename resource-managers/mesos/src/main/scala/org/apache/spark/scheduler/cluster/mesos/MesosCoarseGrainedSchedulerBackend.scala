@@ -67,9 +67,9 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
 
   private val maxCoresOption = conf.getOption("spark.cores.max").map(_.toInt)
 
-  private val executorCoresOption = conf.getOption("spark.executor.cores").map(_.toInt)
+  private val executorCoresOption = conf.getOption("spark.executor.cores").map(_.toDouble)
 
-  private val minCoresPerExecutor = executorCoresOption.getOrElse(1)
+  private val minCoresPerExecutor = executorCoresOption.getOrElse(1.0)
 
   // Maximum number of cores to acquire
   private val maxCores = {
@@ -105,9 +105,9 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
   private val shuffleServiceEnabled = conf.getBoolean("spark.shuffle.service.enabled", false)
 
   // Cores we have acquired with each Mesos task ID
-  private val coresByTaskId = new mutable.HashMap[String, Int]
+  private val coresByTaskId = new mutable.HashMap[String, Double]
   private val gpusByTaskId = new mutable.HashMap[String, Int]
-  private var totalCoresAcquired = 0
+  private var totalCoresAcquired = 0.0
   private var totalGpusAcquired = 0
 
   // The amount of time to wait for locality scheduling
@@ -496,7 +496,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
           // Create a task
           launchTasks = true
           val taskId = newMesosTaskId()
-          val offerCPUs = getResource(resources, "cpus").toInt
+          val offerCPUs = getResource(resources, "cpus").toDouble
           val taskGPUs = Math.min(
             Math.max(0, maxGpus - totalGpusAcquired), getResource(resources, "gpus").toInt)
 
@@ -508,14 +508,21 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
           val (resourcesLeft, resourcesToUse) =
             partitionTaskResources(resources, taskCPUs, taskMemory, taskGPUs)
 
+          val taskCPUsCommand = if (taskCPUs > 0 && taskCPUs < 1) {1} else {taskCPUs.toInt}
+
           val taskBuilder = MesosTaskInfo.newBuilder()
             .setTaskId(TaskID.newBuilder().setValue(taskId.toString).build())
             .setSlaveId(offer.getSlaveId)
-            .setCommand(createCommand(offer, taskCPUs + extraCoresPerExecutor, taskId))
+            .setCommand(createCommand(offer, taskCPUsCommand + extraCoresPerExecutor, taskId))
             .setName(s"${sc.appName} $taskId")
             .setLabels(MesosProtoUtils.mesosLabels(taskLabels))
             .addAllResources(resourcesToUse.asJava)
             .setContainer(getContainerInfo(sc.conf))
+
+          // update baseline of executor according to the cores
+          sc.executorTokens.put(taskId, 0)
+          sc.executorToHost.put(taskId, slaveId)
+          sc.executorBase.put(taskId, if (taskCPUs < 1) {taskCPUs} else {1})
 
           tasks(offer.getId) ::= taskBuilder.build()
           remainingResources(offerId) = resourcesLeft.asJava
@@ -537,7 +544,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
   /** Extracts task needed resources from a list of available resources. */
   private def partitionTaskResources(
       resources: JList[Resource],
-      taskCPUs: Int,
+      taskCPUs: Double,
       taskMemory: Int,
       taskGPUs: Int)
     : (List[Resource], List[Resource]) = {
@@ -562,12 +569,14 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
   private def canLaunchTask(slaveId: String, offerHostname: String,
                             resources: JList[Resource]): Boolean = {
     val offerMem = getResource(resources, "mem")
-    val offerCPUs = getResource(resources, "cpus").toInt
+    val offerCPUs = getResource(resources, "cpus").toDouble
     val cpus = executorCores(offerCPUs)
     val mem = executorMemory(sc)
     val ports = getRangeResource(resources, "ports")
     val meetsPortRequirements = checkPorts(sc.conf, ports)
-
+    if (cpus < 1.0) {
+      logWarning(s"Can launch task even number of cpus is $cpus")
+    }
     cpus > 0 &&
       cpus <= offerCPUs &&
       cpus + totalCoresAcquired <= maxCores &&
@@ -578,7 +587,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
       satisfiesLocality(offerHostname)
   }
 
-  private def executorCores(offerCPUs: Int): Int = {
+  private def executorCores(offerCPUs: Double): Double = {
     executorCoresOption.getOrElse(
       math.min(offerCPUs, maxCores - totalCoresAcquired)
     )

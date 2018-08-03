@@ -222,54 +222,51 @@ private object ParallelCollectionRDD {
   }
 
   def slice[T: ClassTag](seq: Seq[T], sc: SparkContext): Seq[Seq[T]] = {
-    val executorTokens = sc.executorTokens
-    // Here we do the partition based on the values in executorTokens.
+    val executors = for (
+      k <- sc.executorTokens.keySet().toArray()
+    ) yield (sc.executorTokens.get(k), sc.executorBase.get(k))
 
-    if (executorTokens.size() < 1) {
+    if (executors.length < 1) {
       throw new IllegalArgumentException("Positive number of partitions required")
     }
-    // Sequences need to be sliced at the same set of index positions for operations
-    // like RDD.zip() to behave as expected
+    // sort according to the number of tokens
+    object PairOrdering extends Ordering[Tuple2[Int, Double]] {
+      def compare(a: Tuple2[Int, Double], b: Tuple2[Int, Double]) = a._1 compare b._1
+    }
 
-    val tokens = executorTokens.values().toArray.map {i =>
-      val tmp = i.asInstanceOf[Int]
-      // TODO(yuquanshan): this token offset is the ad-hoc solution against the inconsistency
-      // in the AWS official doc (no way we can see 0 token scenario...).
-      if (tmp - 15 > 0) tmp - 15 else 0
-    }.sorted
-
-    val numSlices = executorTokens.values().size()
-    val pi = numSlices // Total amount of work done by single node single vCPU
+    val numSlices = executors.length
+    val pi = numSlices
     // baseline performance of vCPU
     // TODO(yuquanshan): So far the baseline performance is hardcoded and only true
     // for a certain AWS instance (t2.medium) and need to change if using other types
     // of instances. So we need to let our code to automatically detect instance type
     // and adaptively change the baseline performance.
-    val bf = 0.4
+    // val bf = sc.conf.getDouble("spark.debug.baseline", 0.355555)
 
     def solvePieceWise(start: Int, passover: Double, tango: Double): Double = {
-      val slope: Double = tokens.count(_ <= start) * bf + tokens.count(_ > start)
-      val newIndex = tokens.count(_ <= start)
-      if (newIndex == tokens.length) {
+      val slope: Double = executors.filter(_._1 <= start).map(_._2).sum +
+        executors.filter(_._1 > start).map(_._2).sum
+      val newIndex = executors.count (_._1 <= start)
+      if (newIndex == executors.length) {
         (tango - passover) / slope + start
       } else {
-        val newPassover = slope * (tokens(newIndex) - start) + passover
+        val newPassover = slope * (executors(newIndex)._1 - start) + passover
         if (newPassover >= tango) {
           (tango - passover) / slope + start
         } else {
-          solvePieceWise(tokens(newIndex), newPassover, tango)
+          solvePieceWise(executors(newIndex)._1, newPassover, tango)
         }
       }
     }
-
     val finTime = solvePieceWise(0, 0.0, pi)
 
-    val weights = tokens.map { i =>
-      if (i > finTime) {
+    val weights = executors.map { exec =>
+      if (exec._1 > finTime) {
         finTime.asInstanceOf[Double]
       } else {
-        i + (finTime - i) * bf
-      }}.toArray.map(_.asInstanceOf[Double])
+        exec._1 + (finTime - exec._1) * exec._2
+      }
+    }
 
     def positions(length: Long, ws: Array[Double]): Iterator[(Int, Int)] = {
       var start = 0
