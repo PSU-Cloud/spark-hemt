@@ -574,9 +574,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
     val mem = executorMemory(sc)
     val ports = getRangeResource(resources, "ports")
     val meetsPortRequirements = checkPorts(sc.conf, ports)
-    if (cpus < 1.0) {
-      logWarning(s"Can launch task even number of cpus is $cpus")
-    }
+
     cpus > 0 &&
       cpus <= offerCPUs &&
       cpus + totalCoresAcquired <= maxCores &&
