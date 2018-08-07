@@ -288,12 +288,16 @@ class HadoopRDD[K, V](
 
   private def updatePrefLoc(): Unit = {
     // create an ArrayList of class ExecutorPair
-    case class ExecutorPair(val executorId: String, val tokens: Int)
+    case class ExecutorPair(val executorId: String, val tokens: Double)
     var availableArray = Array[ExecutorPair]()
+    val bar = sc.executorTokens.values().toArray().asInstanceOf[Array[Int]].reduceLeft(math.max)
     for (exeID <- sc.executorTokens.keySet().toArray()) {
       val exeIDasString = exeID.asInstanceOf[String]
       availableArray = availableArray :+ ExecutorPair(
-        exeIDasString, sc.executorTokens.get(exeIDasString))
+        exeIDasString,
+        math.max(0.0,
+          bar - sc.executorTokens.get(exeIDasString)) * sc.executorBase.get(exeIDasString)
+          + sc.executorTokens.get(exeIDasString))
     }
 
     // sort availabeArray in ascending order
