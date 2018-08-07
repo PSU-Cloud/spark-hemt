@@ -138,7 +138,8 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
     // TODO(yuquanshan): should rename "tokens" to comppower
     case class ExecutorPair(val executorId: String, val tokens: Double)
     var availableArray = Array[ExecutorPair]()
-    val bar = sc.executorTokens.values().toArray().asInstanceOf[Array[Int]].reduceLeft(math.max)
+    val bar = sc.executorTokens.values().toArray(
+      new Array[Integer](sc.executorTokens.size())).map(_.toInt).reduceLeft(math.max)
     for (exeID <- sc.executorTokens.keySet().toArray()) {
       val exeIDasString = exeID.asInstanceOf[String]
       availableArray = availableArray :+ ExecutorPair(
