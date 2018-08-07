@@ -229,6 +229,7 @@ class HadoopRDD[K, V](
           object PairOrdering extends Ordering[Tuple2[Int, Double]] {
             def compare(a: Tuple2[Int, Double], b: Tuple2[Int, Double]) = a._1 compare b._1
           }
+          Sorting.quickSort(executors)(PairOrdering)
 
           val numSlices = executors.length
           val pi = numSlices

@@ -229,7 +229,7 @@ private object ParallelCollectionRDD {
 
   def slice[T: ClassTag](seq: Seq[T], sc: SparkContext): Seq[Seq[T]] = {
     val executors = for (
-      k <- sc.executorTokens.keySet().toArray()
+      k <- sc.executorTokens.keySet().toArray
     ) yield (sc.executorTokens.get(k), sc.executorBase.get(k))
 
     if (executors.length < 1) {
@@ -239,6 +239,7 @@ private object ParallelCollectionRDD {
     object PairOrdering extends Ordering[Tuple2[Int, Double]] {
       def compare(a: Tuple2[Int, Double], b: Tuple2[Int, Double]) = a._1 compare b._1
     }
+    Sorting.quickSort(executors)(PairOrdering)
 
     val numSlices = executors.length
     val pi = numSlices
