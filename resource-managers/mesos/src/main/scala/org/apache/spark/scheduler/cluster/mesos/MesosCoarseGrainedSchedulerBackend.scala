@@ -522,7 +522,12 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
           // update baseline of executor according to the cores
           sc.executorTokens.put(taskId, 0)
           sc.executorToHost.put(taskId, slaveId)
-          sc.executorBase.put(taskId, if (taskCPUs < 1) {taskCPUs} else {1})
+          sc.executorBase.put(taskId,
+            if (taskCPUs < 1) {
+              taskCPUs + sc.conf.getDouble("spark.debug.fudge", 0.0)
+            } else {
+              1
+            })
 
           tasks(offer.getId) ::= taskBuilder.build()
           remainingResources(offerId) = resourcesLeft.asJava
