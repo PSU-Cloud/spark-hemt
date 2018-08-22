@@ -283,6 +283,7 @@ class HadoopRDD[K, V](
   }
 
   override def optRepartition(): Unit = {
+    logInfo("Flip the opted flag to true.")
     opted = true
   }
 

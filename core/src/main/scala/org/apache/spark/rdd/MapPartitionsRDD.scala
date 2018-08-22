@@ -34,7 +34,10 @@ private[spark] class MapPartitionsRDD[U: ClassTag, T: ClassTag](
 
   override def getPartitions: Array[Partition] = firstParent[T].partitions
 
-  override def optRepartition(): Unit = firstParent[T].optRepartition()
+  override def optRepartition(): Unit = {
+    opted = true
+    firstParent[T].optRepartition()
+  }
 
   override def compute(split: Partition, context: TaskContext): Iterator[U] =
     f(context, split.index, firstParent[T].iterator(split, context))
