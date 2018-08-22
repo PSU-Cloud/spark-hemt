@@ -89,10 +89,6 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
     numSlices: Int,
     locationPrefs: Map[Int, Seq[String]])
     extends RDD[T](sc, Nil) {
-  // a flag indicating whether optRepartition() has been called, it might be used in
-  // getPreferedLocations
-  private var opted = sc.conf.getBoolean("spark.rdd.optRepart", false)
-
   // optimized prefered locations
   private var optLocationPrefs = locationPrefs
 
@@ -139,7 +135,7 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
     case class ExecutorPair(val executorId: String, val tokens: Double)
     var availableArray = Array[ExecutorPair]()
     val bar = sc.executorTokens.values().toArray(
-      new Array[Integer](sc.executorTokens.size())).map(_.toInt).reduceLeft(math.max)
+      new Array[Integer](sc.executorTokens.size())).map(_.toInt).reduceLeft(math.max) + 1
     for (exeID <- sc.executorTokens.keySet().toArray()) {
       val exeIDasString = exeID.asInstanceOf[String]
       availableArray = availableArray :+ ExecutorPair(
@@ -267,13 +263,14 @@ private object ParallelCollectionRDD {
     }
     val finTime = solvePieceWise(0, 0.0, pi)
 
+    // need to sort to handle the case where the tokens are the same, the bases are different
     val weights = executors.map { exec =>
       if (exec._1 > finTime) {
         finTime.asInstanceOf[Double]
       } else {
         exec._1 + (finTime - exec._1) * exec._2
       }
-    }
+    }.sorted
 
     def positions(length: Long, ws: Array[Double]): Iterator[(Int, Int)] = {
       var start = 0

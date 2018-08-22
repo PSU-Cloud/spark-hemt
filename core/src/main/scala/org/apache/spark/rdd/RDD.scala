@@ -152,6 +152,11 @@ abstract class RDD[T: ClassTag](
   /** A friendly name for this RDD */
   @transient var name: String = _
 
+  // a flag indicating whether optRepartition() has been called, it might be used in
+  // getPreferedLocations
+  @transient var opted: Boolean = sc.conf.getBoolean("spark.rdd.optRepart", false) ||
+    deps != Nil && deps.exists(_.rdd.opted)
+
   /** Assign a name to this RDD */
   def setName(_name: String): this.type = {
     name = _name

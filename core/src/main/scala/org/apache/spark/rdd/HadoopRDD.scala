@@ -138,8 +138,6 @@ class HadoopRDD[K, V](
 
   private val ignoreEmptySplits = sparkContext.conf.get(HADOOP_RDD_IGNORE_EMPTY_SPLITS)
 
-  private var opted = sparkContext.conf.getBoolean("spark.rdd.optRepart", false)
-
   // optimized prefered locations
   private var optLocationPrefs = new HashMap[Int, Seq[String]]()
 
@@ -257,13 +255,14 @@ class HadoopRDD[K, V](
           }
           val finTime = solvePieceWise(0, 0.0, pi)
 
+          // need to sort to handle the case where tokens are the same, bases are different
           val weights = executors.map { exec =>
             if (exec._1 > finTime) {
               finTime.asInstanceOf[Double]
             } else {
               exec._1 + (finTime - exec._1) * exec._2
             }
-          }
+          }.sorted
 
           finfmt.updateSplitWeights(weights)
           finfmt.getSplits(jobConf, minPartitions)
@@ -291,8 +290,9 @@ class HadoopRDD[K, V](
     // create an ArrayList of class ExecutorPair
     case class ExecutorPair(val executorId: String, val tokens: Double)
     var availableArray = Array[ExecutorPair]()
+    // plus 1 to account for the case where tokens are the same
     val bar = sc.executorTokens.values().toArray(
-      new Array[Integer](sc.executorTokens.size())).map(_.toInt).reduceLeft(math.max)
+      new Array[Integer](sc.executorTokens.size())).map(_.toInt).reduceLeft(math.max) + 1
     for (exeID <- sc.executorTokens.keySet().toArray()) {
       val exeIDasString = exeID.asInstanceOf[String]
       availableArray = availableArray :+ ExecutorPair(
@@ -308,7 +308,7 @@ class HadoopRDD[K, V](
     }
     Sorting.quickSort(availableArray)(PairOrdering)
 
-    // after the array is sorted, assign each partition to an availabe executor
+    // after the array is sorted, assign each partition to an available executor
     for ((pair, partID) <- availableArray.zipWithIndex) {
       val execID = pair.executorId
       val execHost = executorLocationTag + s"${sc.executorToHost.get(execID)}_$execID"

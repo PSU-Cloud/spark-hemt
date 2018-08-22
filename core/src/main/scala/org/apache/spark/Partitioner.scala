@@ -24,11 +24,12 @@ import scala.collection.mutable.ArrayBuffer
 import scala.math.log10
 import scala.reflect.ClassTag
 import scala.util.hashing.byteswap32
-
 import org.apache.spark.rdd.{PartitionPruningRDD, RDD}
 import org.apache.spark.serializer.JavaSerializer
 import org.apache.spark.util.{CollectionsUtils, Utils}
 import org.apache.spark.util.random.SamplingUtils
+
+import scala.util.Sorting
 
 /**
  * An object that defines how the elements in a key-value pair RDD are partitioned by key.
@@ -81,7 +82,59 @@ object Partitioner {
         defaultNumPartitions < hasMaxPartitioner.get.getNumPartitions)) {
       hasMaxPartitioner.get.partitioner.get
     } else {
-      new HashPartitioner(defaultNumPartitions)
+      if (rdd.opted) {
+        val sc = rdd.context
+        val executors = for (
+          k <- sc.executorTokens.keySet().toArray
+        ) yield (sc.executorTokens.get(k), sc.executorBase.get(k))
+
+        if (executors.length < 1) {
+          throw new IllegalArgumentException("Positive number of partitions required")
+        }
+        // sort according to the number of tokens
+        object PairOrdering extends Ordering[Tuple2[Int, Double]] {
+          def compare(a: Tuple2[Int, Double], b: Tuple2[Int, Double]) = a._1 compare b._1
+        }
+        Sorting.quickSort(executors)(PairOrdering)
+
+        val numSlices = executors.length
+        val pi = numSlices
+        // baseline performance of vCPU
+        // TODO(yuquanshan): So far the baseline performance is hardcoded and only true
+        // for a certain AWS instance (t2.medium) and need to change if using other types
+        // of instances. So we need to let our code to automatically detect instance type
+        // and adaptively change the baseline performance.
+        // val bf = sc.conf.getDouble("spark.debug.baseline", 0.355555)
+
+        def solvePieceWise(start: Int, passover: Double, tango: Double): Double = {
+          val slope: Double = executors.filter(_._1 <= start).map(_._2).sum +
+            executors.filter(_._1 > start).map(_._2).sum
+          val newIndex = executors.count (_._1 <= start)
+          if (newIndex == executors.length) {
+            (tango - passover) / slope + start
+          } else {
+            val newPassover = slope * (executors(newIndex)._1 - start) + passover
+            if (newPassover >= tango) {
+              (tango - passover) / slope + start
+            } else {
+              solvePieceWise(executors(newIndex)._1, newPassover, tango)
+            }
+          }
+        }
+        val finTime = solvePieceWise(0, 0.0, pi)
+
+        // need to sort to handle the case where the tokens are the same, the bases are different
+        val weights = executors.map { exec =>
+          if (exec._1 > finTime) {
+            finTime.asInstanceOf[Double]
+          } else {
+            exec._1 + (finTime - exec._1) * exec._2
+          }
+        }.sorted
+        new SkewedHashPartitioner(weights.length, weights.map(a => (a * 100).toInt))
+      } else {
+        new HashPartitioner(defaultNumPartitions)
+      }
     }
   }
 
@@ -125,6 +178,49 @@ class HashPartitioner(partitions: Int) extends Partitioner {
 
   override def hashCode: Int = numPartitions
 }
+
+/**
+ * A new HashPartitioner with an extra hash wrapper for skewed load balancing for reducers.
+ */
+class SkewedHashPartitioner(partitions: Int, weights: Array[Int]) extends Partitioner {
+  require(partitions >= 0, s"Number of partitions ($partitions) cannot be negative.")
+
+  def numPartitions: Int = if (partitions != weights.length) {
+    // TODO(yuquanshan): add warning...
+    partitions
+  } else {
+    weights.length
+  }
+
+  // biased partitioning, according to the given weights
+  def getPartition(key: Any): Int = key match {
+    case null => 0
+    case _ =>
+      if (partitions == weights.length) {
+        val sum = weights.sum
+        val tmp = Utils.nonNegativeMod(key.hashCode, sum)
+        var s = 0
+        val accw = weights.map { w =>
+          s = s + w
+          s
+        }
+        accw.count(_ <= tmp)
+      } else {
+        Utils.nonNegativeMod(key.hashCode, partitions)
+      }
+  }
+
+  // TODO(yuquanshan): need to investigate whether we need to modify it.
+  override def equals(other: Any): Boolean = other match {
+    case h: HashPartitioner =>
+      h.numPartitions == numPartitions
+    case _ =>
+      false
+  }
+
+  override def hashCode: Int = numPartitions
+}
+
 
 /**
  * A [[org.apache.spark.Partitioner]] that partitions sortable records by range into roughly

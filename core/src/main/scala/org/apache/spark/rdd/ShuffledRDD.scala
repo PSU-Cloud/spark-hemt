@@ -18,10 +18,12 @@
 package org.apache.spark.rdd
 
 import scala.reflect.ClassTag
-
 import org.apache.spark._
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.serializer.Serializer
+
+import scala.collection.immutable.HashMap
+import scala.util.Sorting
 
 private[spark] class ShuffledRDDPartition(val idx: Int) extends Partition {
   override val index: Int = idx
@@ -50,6 +52,13 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
   private var aggregator: Option[Aggregator[K, V, C]] = None
 
   private var mapSideCombine: Boolean = false
+
+  val executorLocationTag = "executor_"
+
+  // optimized prefered locations
+  private var optLocationPrefs = new HashMap[Int, Seq[String]]()
+
+  private var prefLocUpdated = false
 
   /** Set a serializer for this RDD's shuffle, or null to use the default (spark.serializer) */
   def setSerializer(serializer: Serializer): ShuffledRDD[K, V, C] = {
@@ -94,9 +103,19 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
   }
 
   override protected def getPreferredLocations(partition: Partition): Seq[String] = {
-    val tracker = SparkEnv.get.mapOutputTracker.asInstanceOf[MapOutputTrackerMaster]
-    val dep = dependencies.head.asInstanceOf[ShuffleDependency[K, V, C]]
-    tracker.getPreferredLocationsForShuffle(dep, partition.index)
+    if (opted) {
+      if (prefLocUpdated) {
+        optLocationPrefs.getOrElse(partition.index, Nil)
+      } else {
+        updatePrefLoc()
+        prefLocUpdated = true
+        optLocationPrefs.getOrElse(partition.index, Nil)
+      }
+    } else {
+      val tracker = SparkEnv.get.mapOutputTracker.asInstanceOf[MapOutputTrackerMaster]
+      val dep = dependencies.head.asInstanceOf[ShuffleDependency[K, V, C]]
+      tracker.getPreferredLocationsForShuffle(dep, partition.index)
+    }
   }
 
   override def compute(split: Partition, context: TaskContext): Iterator[(K, C)] = {
@@ -109,5 +128,43 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
   override def clearDependencies() {
     super.clearDependencies()
     prev = null
+  }
+
+  private def updatePrefLoc(): Unit = {
+    val sc = context
+
+    // create an ArrayList of class ExecutorPair
+    // TODO(yuquanshan): should rename "tokens" to comppower
+    case class ExecutorPair(val executorId: String, val tokens: Double)
+    var availableArray = Array[ExecutorPair]()
+    val bar = sc.executorTokens.values().toArray(
+      new Array[Integer](sc.executorTokens.size())).map(_.toInt).reduceLeft(math.max) + 1
+    for (exeID <- sc.executorTokens.keySet().toArray()) {
+      val exeIDasString = exeID.asInstanceOf[String]
+      availableArray = availableArray :+ ExecutorPair(
+        exeIDasString,
+        math.max(0.0,
+          bar - sc.executorTokens.get(exeIDasString)) * sc.executorBase.get(exeIDasString)
+          + sc.executorTokens.get(exeIDasString))
+    }
+
+    // sort availabeArray in ascending order
+    object PairOrdering extends Ordering[ExecutorPair] {
+      def compare(a: ExecutorPair, b: ExecutorPair) = a.tokens compare b.tokens
+    }
+    Sorting.quickSort(availableArray)(PairOrdering)
+
+    // after the array is sorted, assign each partition to an availabe executor
+    for ((pair, partID) <- availableArray.zipWithIndex) {
+      val execID = pair.executorId
+      val execHost = executorLocationTag + s"${sc.executorToHost.get(execID)}_$execID"
+      if (optLocationPrefs.contains(partID)) {
+        optLocationPrefs = optLocationPrefs.updated(
+          partID, optLocationPrefs(partID) :+ execHost)
+      } else {
+        optLocationPrefs += (partID -> Seq(execHost))
+      }
+    }
+
   }
 }
