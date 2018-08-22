@@ -53,6 +53,8 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
 
   private var mapSideCombine: Boolean = false
 
+  opted = prev.opted
+
   val executorLocationTag = "executor_"
 
   // optimized prefered locations
