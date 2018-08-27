@@ -131,7 +131,7 @@ object Partitioner {
             exec._1 + (finTime - exec._1) * exec._2
           }
         }.sorted
-        new SkewedHashPartitioner(weights.length, weights.map(a => (a * 100).toInt))
+        new SkewedHashPartitioner(weights.map(a => (a * 100).toInt))
       } else {
         new HashPartitioner(defaultNumPartitions)
       }
@@ -182,38 +182,30 @@ class HashPartitioner(partitions: Int) extends Partitioner {
 /**
  * A new HashPartitioner with an extra hash wrapper for skewed load balancing for reducers.
  */
-class SkewedHashPartitioner(partitions: Int, weights: Array[Int]) extends Partitioner {
-  require(partitions >= 0, s"Number of partitions ($partitions) cannot be negative.")
+class SkewedHashPartitioner(val weights: Array[Int]) extends Partitioner {
+  require(weights.length > 0
+    && weights.count(_ == 0) != weights.length
+    && weights.count(_ < 0) == 0, s"The initial array $weights is problematic.")
 
-  def numPartitions: Int = if (partitions != weights.length) {
-    // TODO(yuquanshan): add warning...
-    partitions
-  } else {
-    weights.length
-  }
+  def numPartitions: Int = weights.length
 
   // biased partitioning, according to the given weights
   def getPartition(key: Any): Int = key match {
     case null => 0
     case _ =>
-      if (partitions == weights.length) {
-        val sum = weights.sum
-        val tmp = Utils.nonNegativeMod(key.hashCode, sum)
-        var s = 0
-        val accw = weights.map { w =>
-          s = s + w
-          s
-        }
-        accw.count(_ <= tmp)
-      } else {
-        Utils.nonNegativeMod(key.hashCode, partitions)
+      val sum = weights.sum
+      val tmp = Utils.nonNegativeMod(key.hashCode, sum)
+      var s = 0
+      val accw = weights.map { w =>
+        s = s + w
+        s
       }
+      accw.count(_ <= tmp)
   }
 
-  // TODO(yuquanshan): need to investigate whether we need to modify it.
   override def equals(other: Any): Boolean = other match {
-    case h: HashPartitioner =>
-      h.numPartitions == numPartitions
+    case h: SkewedHashPartitioner =>
+      h.weights.sameElements(weights)
     case _ =>
       false
   }
