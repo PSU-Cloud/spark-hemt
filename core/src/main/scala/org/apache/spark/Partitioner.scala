@@ -210,7 +210,7 @@ class SkewedHashPartitioner(val weights: Array[Int]) extends Partitioner {
       false
   }
 
-  override def hashCode: Int = numPartitions
+  override def hashCode: Int = weights.toSeq.hashCode()
 }
 
 
