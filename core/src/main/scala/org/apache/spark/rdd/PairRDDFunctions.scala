@@ -313,7 +313,18 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
    * to a "combiner" in MapReduce. Output will be hash-partitioned with numPartitions partitions.
    */
   def reduceByKey(func: (V, V) => V, numPartitions: Int): RDD[(K, V)] = self.withScope {
-    reduceByKey(new HashPartitioner(numPartitions), func)
+    if (self.opted) {
+      if (numPartitions != self.partitions.length) {
+        logWarning("You want opt re-partition by the partition numbers do not match!")
+        reduceByKey(new HashPartitioner(numPartitions), func)
+      } else {
+        logWarning("Instead using default partitioner regardless of numPartitions," +
+          " since opted flag is flipped.")
+        reduceByKey(defaultPartitioner(self), func)
+      }
+    } else {
+      reduceByKey(new HashPartitioner(numPartitions), func)
+    }
   }
 
   /**

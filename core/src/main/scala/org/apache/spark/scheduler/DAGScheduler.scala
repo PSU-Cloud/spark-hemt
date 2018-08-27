@@ -1037,7 +1037,7 @@ class DAGScheduler(
         for (x <- partitions) {
           x match {
             case x: HadoopPartition =>
-              logWarning(s"Partition ${x.index}" +
+              logDebug(s"Partition ${x.index}" +
                 s"nodes: ${x.inputSplit.value.getLocations.mkString("[", ",", "]")}")
             case _ =>
           }
