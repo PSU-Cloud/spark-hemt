@@ -90,6 +90,8 @@ class CoGroupedRDD[K: ClassTag](
 
   private var serializer: Serializer = SparkEnv.get.serializer
 
+  opted = rdds.count(_.opted) == rdds.length
+
   /** Set a serializer for this RDD's shuffle, or null to use the default (spark.serializer) */
   def setSerializer(serializer: Serializer): CoGroupedRDD[K] = {
     this.serializer = serializer
