@@ -17,13 +17,15 @@
 
 package org.apache.spark.rdd
 
+import scala.collection.immutable.HashMap
 import scala.reflect.ClassTag
+import scala.util.Sorting
+
 import org.apache.spark._
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.serializer.Serializer
 
-import scala.collection.immutable.HashMap
-import scala.util.Sorting
+
 
 private[spark] class ShuffledRDDPartition(val idx: Int) extends Partition {
   override val index: Int = idx

@@ -24,23 +24,17 @@ import java.net.{URI, URL}
 import java.nio.ByteBuffer
 import java.util.Properties
 import java.util.concurrent._
-import com.amazonaws.services.cloudwatch.model.Dimension
-import com.amazonaws.services.cloudwatch.AmazonCloudWatch
+
 import com.amazonaws.services.cloudwatch.AmazonCloudWatchClientBuilder
-import com.amazonaws.services.cloudwatch.model.ListMetricsRequest
+import com.amazonaws.services.cloudwatch.model.Dimension
 import com.amazonaws.services.cloudwatch.model.GetMetricStatisticsRequest
-import com.amazonaws.services.cloudwatch.model.GetMetricStatisticsResult
-import com.amazonaws.services.cloudwatch.model.ListMetricsResult
-import com.amazonaws.services.cloudwatch.model.Metric
 import com.amazonaws.util.EC2MetadataUtils
+import com.google.common.util.concurrent.ThreadFactoryBuilder
 import java.util._
 import javax.annotation.concurrent.GuardedBy
-
 import scala.collection.JavaConverters._
 import scala.collection.mutable.{ArrayBuffer, HashMap, Map}
 import scala.util.control.NonFatal
-
-import com.google.common.util.concurrent.ThreadFactoryBuilder
 
 import org.apache.spark._
 import org.apache.spark.deploy.SparkHadoopUtil
@@ -803,16 +797,16 @@ private[spark] class Executor(
       .withDimensions(Arrays.asList(instanceDimension))
       .withEndTime(new Date())
     val result = cw.getMetricStatistics(request)
-    var credits: Int  = 0
+    var credits: Int = 0
     try{
-      credits= result.getDatapoints().get(0).getAverage().toInt
+      credits = result.getDatapoints().get(0).getAverage().toInt
     }
-    catch{
+    catch {
       case _: Throwable => logWarning("No response from AWS CloudWatch")
-
     }
 
-    val message = Heartbeat(executorId, accumUpdates.toArray, env.blockManager.blockManagerId, credits)
+    val message = Heartbeat(executorId, accumUpdates.toArray,
+      env.blockManager.blockManagerId, credits)
     try {
       val response = heartbeatReceiverRef.askSync[HeartbeatResponse](
           message, RpcTimeout(conf, "spark.executor.heartbeatInterval", "10s"))

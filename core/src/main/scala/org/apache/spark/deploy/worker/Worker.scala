@@ -26,14 +26,12 @@ import com.amazonaws.services.cloudwatch.model.ListMetricsRequest
 import com.amazonaws.services.cloudwatch.model.ListMetricsResult
 import com.amazonaws.services.cloudwatch.model.Metric
 import com.amazonaws.util.EC2MetadataUtils
-
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.{Arrays, Date, Locale, UUID}
 import java.util.concurrent._
 import java.util.concurrent.{Future => JFuture, ScheduledFuture => JScheduledFuture}
-
 import scala.collection.mutable.{HashMap, HashSet, LinkedHashMap}
 import scala.concurrent.ExecutionContext
 import scala.util.Random
