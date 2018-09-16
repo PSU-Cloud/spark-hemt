@@ -209,6 +209,34 @@ class DAGScheduler(
   private[scheduler] val eventProcessLoop = new DAGSchedulerEventProcessLoop(this)
   taskScheduler.setDAGScheduler(this)
 
+  /** pick the longest stage, report the avg task finish time of the executors */
+  def reportExecutorPerf: Array[(String, Double)] = {
+    var stageid = -1
+    var longestFinTime: Long = 0
+    for (key <- stageIdToStage.keys) {
+      stageIdToStage.get(key) match {
+        case Some(stage) =>
+          if (longestFinTime < stage.execTimes.values.map(_.sum).sum) {
+            longestFinTime = stage.execTimes.values.map(_.sum).sum
+            stageid = key
+          }
+        case _ =>
+      }
+    }
+    if (stageid == -1) {
+      Array[(String, Double)]()
+    } else {
+      stageIdToStage.get(stageid) match {
+        case Some(stage) =>
+          var res = Array[(String, Double)]()
+          for ((exec, acc) <- stage.execTimes) {
+            res = res :+ Tuple2(exec, acc.avg)
+          }
+          res.sortBy(_._2)
+        case _ => Array[(String, Double)]()
+      }
+    }
+  }
   /**
    * Called by the TaskSetManager to report task's starting.
    */
@@ -1131,6 +1159,13 @@ class DAGScheduler(
     val task = event.task
     val stage = stageIdToStage(task.stageId)
     try {
+      if (event.reason == Success) {
+        stage.execTimes.get(event.taskInfo.executorId) match {
+          case Some(accum) => accum.add(task.metrics.executorRunTime)
+          case None =>
+            stage.execTimes.put(event.taskInfo.executorId, new LongAccumulator)
+        }
+      }
       event.accumUpdates.foreach { updates =>
         val id = updates.id
         // Find the corresponding accumulator on the driver and update it

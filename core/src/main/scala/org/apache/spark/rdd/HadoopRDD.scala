@@ -264,6 +264,11 @@ class HadoopRDD[K, V](
             }
           }.sorted
 
+          // add suggested fudge factor inherited from Mesos
+          if (weights.length > 0) {
+            weights(0) = weights(0) + sc.dynamicFudge
+          }
+
           finfmt.updateSplitWeights(weights)
           finfmt.getSplits(jobConf, minPartitions)
         case _ =>

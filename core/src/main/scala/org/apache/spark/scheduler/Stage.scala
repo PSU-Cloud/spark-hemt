@@ -17,12 +17,15 @@
 
 package org.apache.spark.scheduler
 
+import scala.collection.mutable.HashMap
 import scala.collection.mutable.HashSet
 
 import org.apache.spark.executor.TaskMetrics
 import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
-import org.apache.spark.util.CallSite
+import org.apache.spark.util.{CallSite, LongAccumulator}
+
+
 
 /**
  * A stage is a set of parallel tasks all computing the same function that need to run as part
@@ -72,6 +75,9 @@ private[scheduler] abstract class Stage(
 
   val name: String = callSite.shortForm
   val details: String = callSite.longForm
+
+  /** The task finish time on each executor. */
+  val execTimes = new HashMap[String, LongAccumulator]()
 
   /**
    * Pointer to the [[StageInfo]] object for the most recent attempt. This needs to be initialized

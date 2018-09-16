@@ -347,7 +347,51 @@ class SparkContext(config: SparkConf) extends Logging {
    */
   val executorToHost: ConcurrentMap[String, String] = new ConcurrentHashMap[String, String]()
 
-  val executorBase: ConcurrentHashMap[String, Double] = new ConcurrentHashMap[String, Double]()
+  val executorBase: ConcurrentMap[String, Double] = new ConcurrentHashMap[String, Double]()
+
+  var dynamicFudge: Double = 0.0
+  /**
+   * Calculating computation power of the executors.
+   * TODO(yuquanshan): use this function to simplify updatePrefLoc in ParallelCollectionRDD
+   * and HadoopRDD.
+   */
+  def executorCompPwr: Array[(String, Double)] = {
+    var res = Array[(String, Double)]()
+    val bar = executorTokens.values().toArray(
+      new Array[Integer](executorTokens.size())).map(_.toInt).reduceLeft(math.max) + 1
+    for (exeID <- executorTokens.keySet().toArray()) {
+      val exeIDasString = exeID.asInstanceOf[String]
+      res = res :+ Tuple2(exeIDasString,
+        math.max(0.0,
+          bar - executorTokens.get(exeIDasString)) * executorBase.get(exeIDasString)
+          + executorTokens.get(exeIDasString))
+    }
+    res.sortBy(_._2)
+  }
+
+  /** After the job finishes, indicate whether we should adjust way of partitioning data. */
+  def suggestedPart: Int = {
+    val compPwr = executorCompPwr
+    val compPerf = dagScheduler.reportExecutorPerf
+    if (compPwr.length > 1 && compPerf.length > 1) {
+      val pwrr = compPwr(0)._2 / (compPwr(0)._2 + compPwr(compPwr.length - 1)._2)
+      val prfr = compPerf(compPerf.length - 1)._2 /
+        (compPerf(0)._2 + compPerf(compPerf.length - 1)._2)
+      if (prfr - pwrr > 0.1) {
+        2
+      } else if (prfr - pwrr > 0.01) {
+        1
+      } else if (prfr - pwrr < -0.1) {
+        -2
+      } else if (prfr - pwrr < -0.01) {
+        -1
+      } else {
+        0
+      }
+    } else {
+      0
+    }
+  }
 
   // Thread Local variable that can be used by users to pass information down the stack
   protected[spark] val localProperties = new InheritableThreadLocal[Properties] {

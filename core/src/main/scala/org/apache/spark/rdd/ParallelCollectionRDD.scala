@@ -272,6 +272,11 @@ private object ParallelCollectionRDD {
       }
     }.sorted
 
+    // add suggested fudge factor inherited from Mesos
+    if (weights.length > 0) {
+      weights(0) = weights(0) + sc.dynamicFudge
+    }
+
     def positions(length: Long, ws: Array[Double]): Iterator[(Int, Int)] = {
       var start = 0
       var end = 0
