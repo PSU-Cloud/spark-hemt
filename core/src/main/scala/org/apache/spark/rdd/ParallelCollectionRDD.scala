@@ -127,33 +127,11 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
   }
 
   private def updatePrefLoc(): Unit = {
-    // TODO(nader): don't forget to update locationPrefs, using sc.executorTokens
-    // (and maybe sc.executorToHost).
+    var availableArray = sc.workloadDiv(sc.executorTokens.size())
 
-    // create an ArrayList of class ExecutorPair
-    // TODO(yuquanshan): should rename "tokens" to comppower
-    case class ExecutorPair(val executorId: String, val tokens: Double)
-    var availableArray = Array[ExecutorPair]()
-    val bar = sc.executorTokens.values().toArray(
-      new Array[Integer](sc.executorTokens.size())).map(_.toInt).reduceLeft(math.max) + 1
-    for (exeID <- sc.executorTokens.keySet().toArray()) {
-      val exeIDasString = exeID.asInstanceOf[String]
-      availableArray = availableArray :+ ExecutorPair(
-        exeIDasString,
-        math.max(0.0,
-          bar - sc.executorTokens.get(exeIDasString)) * sc.executorBase.get(exeIDasString)
-        + sc.executorTokens.get(exeIDasString))
-    }
-
-    // sort availabeArray in ascending order
-    object PairOrdering extends Ordering[ExecutorPair] {
-      def compare(a: ExecutorPair, b: ExecutorPair) = a.tokens compare b.tokens
-    }
-    Sorting.quickSort(availableArray)(PairOrdering)
-
-    // after the array is sorted, assign each partition to an availabe executor
+    // after the array is sorted, assign each partition to an available executor
     for ((pair, partID) <- availableArray.zipWithIndex) {
-      val execID = pair.executorId
+      val execID = pair._1
       val execHost = executorLocationTag + s"${sc.executorToHost.get(execID)}_$execID"
       if (optLocationPrefs.contains(partID)) {
         optLocationPrefs = optLocationPrefs.updated(
@@ -162,7 +140,6 @@ private[spark] class ParallelCollectionRDD[T: ClassTag](
         optLocationPrefs += (partID -> Seq(execHost))
       }
     }
-
   }
 
   override def compute(s: Partition, context: TaskContext): Iterator[T] = {
@@ -224,58 +201,11 @@ private object ParallelCollectionRDD {
   }
 
   def slice[T: ClassTag](seq: Seq[T], sc: SparkContext): Seq[Seq[T]] = {
-    val executors = for (
-      k <- sc.executorTokens.keySet().toArray
-    ) yield (sc.executorTokens.get(k), sc.executorBase.get(k))
-
-    if (executors.length < 1) {
+    val weights = sc.workloadDiv(sc.executorTokens.size().toDouble).map(_._2)
+    if (weights.length < 1) {
       throw new IllegalArgumentException("Positive number of partitions required")
     }
-    // sort according to the number of tokens
-    object PairOrdering extends Ordering[Tuple2[Int, Double]] {
-      def compare(a: Tuple2[Int, Double], b: Tuple2[Int, Double]) = a._1 compare b._1
-    }
-    Sorting.quickSort(executors)(PairOrdering)
-
-    val numSlices = executors.length
-    val pi = numSlices
-    // baseline performance of vCPU
-    // TODO(yuquanshan): So far the baseline performance is hardcoded and only true
-    // for a certain AWS instance (t2.medium) and need to change if using other types
-    // of instances. So we need to let our code to automatically detect instance type
-    // and adaptively change the baseline performance.
-    // val bf = sc.conf.getDouble("spark.debug.baseline", 0.355555)
-
-    def solvePieceWise(start: Int, passover: Double, tango: Double): Double = {
-      val slope: Double = executors.filter(_._1 <= start).map(_._2).sum +
-        executors.filter(_._1 > start).map(_._2).sum
-      val newIndex = executors.count (_._1 <= start)
-      if (newIndex == executors.length) {
-        (tango - passover) / slope + start
-      } else {
-        val newPassover = slope * (executors(newIndex)._1 - start) + passover
-        if (newPassover >= tango) {
-          (tango - passover) / slope + start
-        } else {
-          solvePieceWise(executors(newIndex)._1, newPassover, tango)
-        }
-      }
-    }
-    val finTime = solvePieceWise(0, 0.0, pi)
-
-    // need to sort to handle the case where the tokens are the same, the bases are different
-    val weights = executors.map { exec =>
-      if (exec._1 > finTime) {
-        finTime.asInstanceOf[Double]
-      } else {
-        exec._1 + (finTime - exec._1) * exec._2
-      }
-    }.sorted
-
-    // add suggested fudge factor inherited from Mesos
-    if (weights.length > 0) {
-      weights(0) = weights(0) + sc.dynamicFudge
-    }
+    val numSlices = weights.length
 
     def positions(length: Long, ws: Array[Double]): Iterator[(Int, Int)] = {
       var start = 0

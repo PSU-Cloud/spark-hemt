@@ -84,59 +84,7 @@ object Partitioner {
     } else {
       if (rdd.opted) {
         val sc = rdd.context
-        val executors = for (
-          k <- sc.executorTokens.keySet().toArray
-        ) yield (sc.executorTokens.get(k), sc.executorBase.get(k))
-
-        if (executors.length < 1) {
-          throw new IllegalArgumentException("Positive number of partitions required")
-        }
-        // sort according to the number of tokens
-        object PairOrdering extends Ordering[Tuple2[Int, Double]] {
-          def compare(a: Tuple2[Int, Double], b: Tuple2[Int, Double]) = a._1 compare b._1
-        }
-        Sorting.quickSort(executors)(PairOrdering)
-
-        val numSlices = executors.length
-        val pi = numSlices
-        // baseline performance of vCPU
-        // TODO(yuquanshan): So far the baseline performance is hardcoded and only true
-        // for a certain AWS instance (t2.medium) and need to change if using other types
-        // of instances. So we need to let our code to automatically detect instance type
-        // and adaptively change the baseline performance.
-        // val bf = sc.conf.getDouble("spark.debug.baseline", 0.355555)
-
-        def solvePieceWise(start: Int, passover: Double, tango: Double): Double = {
-          val slope: Double = executors.filter(_._1 <= start).map(_._2).sum +
-            executors.filter(_._1 > start).map(_._2).sum
-          val newIndex = executors.count (_._1 <= start)
-          if (newIndex == executors.length) {
-            (tango - passover) / slope + start
-          } else {
-            val newPassover = slope * (executors(newIndex)._1 - start) + passover
-            if (newPassover >= tango) {
-              (tango - passover) / slope + start
-            } else {
-              solvePieceWise(executors(newIndex)._1, newPassover, tango)
-            }
-          }
-        }
-        val finTime = solvePieceWise(0, 0.0, pi)
-
-        // need to sort to handle the case where the tokens are the same, the bases are different
-        val weights = executors.map { exec =>
-          if (exec._1 > finTime) {
-            finTime.asInstanceOf[Double]
-          } else {
-            exec._1 + (finTime - exec._1) * exec._2
-          }
-        }.sorted
-
-        // add suggested fudge factor inherited from Mesos
-        if (weights.length > 0) {
-          weights(0) = weights(0) + sc.dynamicFudge
-        }
-
+        val weights = sc.workloadDiv(sc.executorTokens.size()).map(_._2)
         new SkewedHashPartitioner(weights.map(a => (a * 100).toInt))
       } else {
         new HashPartitioner(defaultNumPartitions)

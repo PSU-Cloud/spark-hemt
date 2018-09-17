@@ -350,6 +350,8 @@ class SparkContext(config: SparkConf) extends Logging {
   val executorBase: ConcurrentMap[String, Double] = new ConcurrentHashMap[String, Double]()
 
   var dynamicFudge: Double = 0.0
+
+  var weakHost: String = ""
   /**
    * Calculating computation power of the executors.
    * TODO(yuquanshan): use this function to simplify updatePrefLoc in ParallelCollectionRDD
@@ -369,29 +371,91 @@ class SparkContext(config: SparkConf) extends Logging {
     res.sortBy(_._2)
   }
 
-  /** After the job finishes, indicate whether we should adjust way of partitioning data. */
-  def suggestedPart: Int = {
-    val compPwr = executorCompPwr
+  /**
+   * Given total workload pi and executor parameters stored in the context. Find the division on
+   * each executor. Return Array[(executorId, division)].
+   */
+  def workloadDiv(pi: Double): Array[(String, Double)] = {
+    var executors = Array[(Int, Double, String)]()
+    for (k <- executorTokens.keySet().toArray()) {
+      executors = executors :+ Tuple3(executorTokens.getOrDefault(k, 0),
+        executorBase.getOrDefault(k, 1.0), k.asInstanceOf[String])
+    }
+    executors.sortBy(_._1)
+
+    def solvePieceWise(start: Int, passover: Double, tango: Double): Double = {
+      val slope: Double = executors.filter(_._1 <= start).map(_._2).sum +
+        executors.filter(_._1 > start).map(_._2).sum
+      val newIndex = executors.count (_._1 <= start)
+      if (newIndex == executors.length) {
+        (tango - passover) / slope + start
+      } else {
+        val newPassover = slope * (executors(newIndex)._1 - start) + passover
+        if (newPassover >= tango) {
+          (tango - passover) / slope + start
+        } else {
+          solvePieceWise(executors(newIndex)._1, newPassover, tango)
+        }
+      }
+    }
+    val finTime = solvePieceWise(0, 0.0, pi)
+
+    // need to sort to handle the case where tokens are the same, bases are different
+    val weights = executors.map { exec =>
+      var delta: Double = 0.0
+      if (executorToHost.getOrDefault(exec._3, "") == weakHost) {
+        delta = dynamicFudge * pi / (1.0 - finTime.asInstanceOf[Double] / pi - dynamicFudge)
+      }
+      if (exec._1 > finTime) {
+        (exec._3, finTime.asInstanceOf[Double] + delta)
+      } else {
+        (exec._3, exec._1 + (finTime - exec._1) * exec._2 + delta)
+      }
+    }
+    weights.sortBy(_._2)
+  }
+
+  /**
+   * Extract executors' run time for the longest stage from DAGscheduler.
+   */
+  def executorPerf: Array[(String, Double)] = {
+    dagScheduler.reportExecutorPerf
+  }
+
+  /**
+   * After the job finishes, indicate whether we should adjust way of partitioning data.
+   * Return (new weakHost, trend for future dynamicFudge)
+   */
+  def suggestedPart: (String, Int) = {
     val compPerf = dagScheduler.reportExecutorPerf
+    val weakid = compPerf(compPerf.length - 1)._1
+    // if suggested weak host is not the de facto (observed) weak host, then the stored
+    // dynamicFudge (only working for suggested weak host) no long functions,
+    // and shall be reset to 0.
+    if (weakHost != executorToHost.getOrDefault(weakid, "")) {
+      dynamicFudge = 0.0
+    }
+    val compPwr = workloadDiv(executorTokens.size())
     logInfo("Idea computation power: " + compPwr.mkString(",") + "; observed computation power: "
       + compPerf.mkString(","))
     if (compPwr.length > 1 && compPerf.length > 1) {
-      val pwrr = compPwr(0)._2 / (compPwr(0)._2 + compPwr(compPwr.length - 1)._2)
-      val prfr = compPerf(compPerf.length - 1)._2 /
-        (compPerf(0)._2 + compPerf(compPerf.length - 1)._2)
+      val weakid = compPerf(compPerf.length - 1)._1
+      val pwrr = compPwr.find(_._1 == weakid).get._2 /
+        (compPwr.find(_._1 != weakid).get._2 + compPwr.find(_._1 == weakid).get._2)
+      val prfr = compPerf(0)._2 / (compPerf(0)._2 + compPerf(compPerf.length - 1)._2)
       if (prfr - pwrr > 0.1) {
-        2
+        (executorToHost.getOrDefault(weakid, ""), 2)
       } else if (prfr - pwrr > 0.01) {
-        1
+        (executorToHost.getOrDefault(weakid, ""), 1)
       } else if (prfr - pwrr < -0.1) {
-        -2
+        (executorToHost.getOrDefault(weakid, ""), -2)
       } else if (prfr - pwrr < -0.01) {
-        -1
+        (executorToHost.getOrDefault(weakid, ""), -1)
       } else {
-        0
+        (executorToHost.getOrDefault(weakid, ""), 0)
       }
     } else {
-      0
+      ("", 0)
     }
   }
 
