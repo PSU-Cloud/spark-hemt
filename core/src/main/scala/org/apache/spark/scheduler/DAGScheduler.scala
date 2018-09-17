@@ -1159,6 +1159,7 @@ class DAGScheduler(
           case Some(accum) => accum.add(task.metrics.executorRunTime)
           case None =>
             stage.execTimes.put(event.taskInfo.executorId, new LongAccumulator)
+            stage.execTimes(event.taskInfo.executorId).add(task.metrics.executorRunTime)
         }
       }
       event.accumUpdates.foreach { updates =>
