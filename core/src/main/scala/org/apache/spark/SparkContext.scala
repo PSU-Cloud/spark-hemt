@@ -402,15 +402,16 @@ class SparkContext(config: SparkConf) extends Logging {
 
     // need to sort to handle the case where tokens are the same, bases are different
     val weights = executors.map { exec =>
+      val tempw = if (exec._1 > finTime) {
+        finTime.asInstanceOf[Double]
+      } else {
+        exec._1 + (finTime - exec._1) * exec._2
+      }
       var delta: Double = 0.0
       if (executorToHost.getOrDefault(exec._3, "") == weakHost) {
-        delta = dynamicFudge * pi / (1.0 - finTime.asInstanceOf[Double] / pi - dynamicFudge)
+        delta = dynamicFudge * pi / (1.0 - tempw / pi - dynamicFudge)
       }
-      if (exec._1 > finTime) {
-        (exec._3, finTime.asInstanceOf[Double] + delta)
-      } else {
-        (exec._3, exec._1 + (finTime - exec._1) * exec._2 + delta)
-      }
+      (exec._3, tempw + delta)
     }
     weights.sortBy(_._2)
   }
@@ -440,9 +441,8 @@ class SparkContext(config: SparkConf) extends Logging {
       + compPerf.mkString(","))
     if (compPwr.length > 1 && compPerf.length > 1) {
       val weakid = compPerf(compPerf.length - 1)._1
-      val pwrr = compPwr.find(_._1 == weakid).get._2 /
-        (compPwr.find(_._1 != weakid).get._2 + compPwr.find(_._1 == weakid).get._2)
-      val prfr = compPerf(0)._2 / (compPerf(0)._2 + compPerf(compPerf.length - 1)._2)
+      val pwrr = compPwr.find(_._1 == weakid).get._2 / compPwr.map(_._2).sum
+      val prfr = compPerf(0)._2 / compPerf.map(_._2).sum
       if (prfr - pwrr > 0.1) {
         (executorToHost.getOrDefault(weakid, ""), 2)
       } else if (prfr - pwrr > 0.01) {
