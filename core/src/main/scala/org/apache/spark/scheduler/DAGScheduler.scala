@@ -142,6 +142,7 @@ class DAGScheduler(
 
   private[scheduler] val jobIdToStageIds = new HashMap[Int, HashSet[Int]]
   private[scheduler] val stageIdToStage = new HashMap[Int, Stage]
+  private[scheduler] val historicalStageInfo = new HashMap[Int, HashMap[String, LongAccumulator]]
   /**
    * Mapping from shuffle dependency ID to the ShuffleMapStage that will generate the data for
    * that dependency. Only includes stages that are part of currently running job (when the job(s)
@@ -213,28 +214,20 @@ class DAGScheduler(
   def reportExecutorPerf: Array[(String, Double)] = {
     var stageid = -1
     var longestFinTime: Long = 0
-    for (key <- stageIdToStage.keys) {
-      stageIdToStage.get(key) match {
-        case Some(stage) =>
-          if (longestFinTime < stage.execTimes.values.map(_.sum).sum) {
-            longestFinTime = stage.execTimes.values.map(_.sum).sum
-            stageid = key
-          }
-        case _ =>
+    for (key <- historicalStageInfo.keys) {
+      if (longestFinTime < historicalStageInfo(key).values.map(_.sum).sum) {
+        longestFinTime = historicalStageInfo(key).values.map(_.sum).sum
+        stageid = key
       }
     }
     if (stageid == -1) {
       Array[(String, Double)]()
     } else {
-      stageIdToStage.get(stageid) match {
-        case Some(stage) =>
-          var res = Array[(String, Double)]()
-          for ((exec, acc) <- stage.execTimes) {
-            res = res :+ Tuple2(exec, acc.avg)
-          }
-          res.sortBy(_._2)
-        case _ => Array[(String, Double)]()
+      var res = Array[(String, Double)]()
+      for ((exec, acc) <- historicalStageInfo(stageid)) {
+        res = res :+ Tuple2(exec, acc.avg)
       }
+      res.sortBy(_._2)
     }
   }
   /**
@@ -567,6 +560,8 @@ class DAGScheduler(
                   failedStages -= stage
                 }
               }
+              historicalStageInfo.put(historicalStageInfo.size,
+                stageIdToStage(stageId).execTimes)
               // data structures based on StageId
               stageIdToStage -= stageId
               logDebug("After removal of stage %d, remaining stages = %d"

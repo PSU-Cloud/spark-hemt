@@ -131,6 +131,12 @@ object Partitioner {
             exec._1 + (finTime - exec._1) * exec._2
           }
         }.sorted
+
+        // add suggested fudge factor inherited from Mesos
+        if (weights.length > 0) {
+          weights(0) = weights(0) + sc.dynamicFudge
+        }
+
         new SkewedHashPartitioner(weights.map(a => (a * 100).toInt))
       } else {
         new HashPartitioner(defaultNumPartitions)
