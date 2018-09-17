@@ -373,6 +373,8 @@ class SparkContext(config: SparkConf) extends Logging {
   def suggestedPart: Int = {
     val compPwr = executorCompPwr
     val compPerf = dagScheduler.reportExecutorPerf
+    logInfo("Idea computation power: " + compPwr.mkString(",") + "; observed computation power: "
+      + compPerf.mkString(","))
     if (compPwr.length > 1 && compPerf.length > 1) {
       val pwrr = compPwr(0)._2 / (compPwr(0)._2 + compPwr(compPwr.length - 1)._2)
       val prfr = compPerf(compPerf.length - 1)._2 /

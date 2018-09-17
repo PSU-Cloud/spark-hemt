@@ -370,13 +370,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
 
       val (matchedOffers, unmatchedOffers) = offers.asScala.partition { offer =>
         if (offer.hasSuggestedFudge()) {
-          sc.dynamicFudge = offer.getSuggestedFudge() match {
-            case 2 => 0.1
-            case 1 => 0.01
-            case -1 => -0.01
-            case -2 => -0.1
-            case _ => 0.0
-          }
+          sc.dynamicFudge = offer.getSuggestedFudge()
         }
         val offerAttributes = toAttributeMap(offer.getAttributesList)
         matchesAttributeRequirements(slaveOfferConstraints, offerAttributes)
