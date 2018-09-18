@@ -453,7 +453,7 @@ class SparkContext(config: SparkConf) extends Logging {
       + compPerf.mkString(",") + "; Executor to apply fudge factor: " + weakid)
     if (compPwr.length > 1 && compPerf.length > 1) {
       val pwrr = compPwr.find(_._1 == weakid).get._2 / compPwr.map(_._2).sum
-      val prfr = compPerf.find(_._1 == weakid).get._2 / compPerf.map(_._2).sum
+      val prfr = 1 / compPerf.find(_._1 == weakid).get._2 / compPerf.map(1 / _._2).sum
       if (prfr - pwrr > 0.1) {
         (executorToHost.getOrDefault(weakid, ""), 2)
       } else if (prfr - pwrr > 0.01) {
