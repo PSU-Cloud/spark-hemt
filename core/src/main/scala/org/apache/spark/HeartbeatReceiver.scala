@@ -128,7 +128,7 @@ private[spark] class HeartbeatReceiver(sc: SparkContext, clock: Clock)
             override def run(): Unit = Utils.tryLogNonFatalError {
               val unknownExecutor = !scheduler.executorHeartbeatReceived(
                 executorId, accumUpdates, blockManagerId)
-              sc.executorTokens.put(executorId, credits)
+              sc.executorTokens.put(executorId, if (sc.freezeTokens) {0} else {credits})
 
               val response = HeartbeatResponse(reregisterBlockManager = unknownExecutor)
               context.reply(response)
@@ -189,7 +189,12 @@ private[spark] class HeartbeatReceiver(sc: SparkContext, clock: Clock)
    * and expire it with loud error messages.
    */
   override def onExecutorRemoved(executorRemoved: SparkListenerExecutorRemoved): Unit = {
-    sc.executorTokens.remove(executorRemoved.executorId)
+    // suppose there is no such if statement, if this method is called before the
+    // sc.workloadDiv call in MesosCoarseGrainedSchedulerBackend, then solvePieceWise
+    // in sc.workloadDiv would be an endless recursion - tango will never be reached.
+    if (!sc.freezeTokens) {
+      sc.executorTokens.remove(executorRemoved.executorId)
+    }
     removeExecutor(executorRemoved.executorId)
   }
 

@@ -337,6 +337,11 @@ class SparkContext(config: SparkConf) extends Logging {
    */
   val executorTokens: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int]()
 
+  // stop updating tokens from executors, ad-hoc solution for learning system to keep consistency
+  // in workloadDiv when used in RDD and used in suggestedPart when a job ends, when running on
+  // burstables.
+  var freezeTokens: Boolean = true
+
   /**
    * The executorId -> hostname map, solely used to create location string if we use
    * executor -> num of tokens mapping. If we use host -> num of tokens mapping, then there
@@ -432,8 +437,10 @@ class SparkContext(config: SparkConf) extends Logging {
     // the executor id of interest, if weakHost is empty, pick the slowest one, or non-empty,
     // meaning it's inherited from Mesos, if the weakHost is hosting one executor of this job
     // then the executor on weakHost is the one of interest, o.w., pick the slowest one.
-    val weakid = if (weakHost == "") {
-      compPerf(compPerf.length - 1)._1
+    val weakid = if (compPerf.length == 0) {
+      ""
+    } else if (weakHost == "") {
+        compPerf(compPerf.length - 1)._1
     } else {
       var wid = ""
       for (eid <- executorToHost.keySet().toArray) {
