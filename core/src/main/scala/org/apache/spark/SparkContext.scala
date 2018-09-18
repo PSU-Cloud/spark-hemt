@@ -429,20 +429,31 @@ class SparkContext(config: SparkConf) extends Logging {
    */
   def suggestedPart: (String, Int) = {
     val compPerf = dagScheduler.reportExecutorPerf
-    val weakid = compPerf(compPerf.length - 1)._1
-    // if suggested weak host is not the de facto (observed) weak host, then the stored
-    // dynamicFudge (only working for suggested weak host) no long functions,
-    // and shall be reset to 0.
-    if (weakHost != executorToHost.getOrDefault(weakid, "")) {
-      dynamicFudge = 0.0
+    // the executor id of interest, if weakHost is empty, pick the slowest one, or non-empty,
+    // meaning it's inherited from Mesos, if the weakHost is hosting one executor of this job
+    // then the executor on weakHost is the one of interest, o.w., pick the slowest one.
+    val weakid = if (weakHost == "") {
+      compPerf(compPerf.length - 1)._1
+    } else {
+      var wid = ""
+      for (eid <- executorToHost.keySet().toArray) {
+        if (executorToHost.getOrDefault(eid, "") == weakHost) {
+          wid = eid.asInstanceOf[String]
+        }
+      }
+      if (wid == "") {
+        compPerf(compPerf.length - 1)._1
+      } else {
+        wid
+      }
     }
+
     val compPwr = workloadDiv(executorTokens.size())
     logInfo("Idea computation power: " + compPwr.mkString(",") + "; observed computation power: "
-      + compPerf.mkString(","))
+      + compPerf.mkString(",") + "; Executor to apply fudge factor: " + weakid)
     if (compPwr.length > 1 && compPerf.length > 1) {
-      val weakid = compPerf(compPerf.length - 1)._1
       val pwrr = compPwr.find(_._1 == weakid).get._2 / compPwr.map(_._2).sum
-      val prfr = compPerf(0)._2 / compPerf.map(_._2).sum
+      val prfr = compPerf.find(_._1 == weakid).get._2 / compPerf.map(_._2).sum
       if (prfr - pwrr > 0.1) {
         (executorToHost.getOrDefault(weakid, ""), 2)
       } else if (prfr - pwrr > 0.01) {
