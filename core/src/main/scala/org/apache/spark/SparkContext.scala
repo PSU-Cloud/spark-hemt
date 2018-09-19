@@ -425,7 +425,7 @@ class SparkContext(config: SparkConf) extends Logging {
    * Extract executors' run time for the longest stage from DAGscheduler.
    */
   def executorPerf: Array[(String, Double)] = {
-    dagScheduler.reportExecutorPerf
+    dagScheduler.reportExecutorRunTime
   }
 
   /**
@@ -433,14 +433,14 @@ class SparkContext(config: SparkConf) extends Logging {
    * Return (new weakHost, trend for future dynamicFudge)
    */
   def suggestedPart: (String, Int) = {
-    val compPerf = dagScheduler.reportExecutorPerf
+    val execRunTime = dagScheduler.reportExecutorRunTime
     // the executor id of interest, if weakHost is empty, pick the slowest one, or non-empty,
     // meaning it's inherited from Mesos, if the weakHost is hosting one executor of this job
     // then the executor on weakHost is the one of interest, o.w., pick the slowest one.
-    val weakid = if (compPerf.length == 0) {
+    val weakid = if (execRunTime.length == 0) {
       ""
     } else if (weakHost == "") {
-        compPerf(compPerf.length - 1)._1
+        execRunTime(execRunTime.length - 1)._1
     } else {
       var wid = ""
       for (eid <- executorToHost.keySet().toArray) {
@@ -449,18 +449,21 @@ class SparkContext(config: SparkConf) extends Logging {
         }
       }
       if (wid == "") {
-        compPerf(compPerf.length - 1)._1
+        execRunTime(execRunTime.length - 1)._1
       } else {
         wid
       }
     }
 
     val compPwr = workloadDiv(executorTokens.size())
-    logInfo("Idea computation power: " + compPwr.mkString(",") + "; observed computation power: "
-      + compPerf.mkString(",") + "; Executor to apply fudge factor: " + weakid)
-    if (compPwr.length > 1 && compPerf.length > 1) {
+    logInfo("Idea computation power: " + compPwr.mkString(",") + "; observed executor run time: "
+      + execRunTime.mkString(",") + "; Executor to apply fudge factor: " + weakid)
+    if (compPwr.length > 1 && execRunTime.length > 1) {
+      // TODO(yuquanshan): throw exception if executorids don't match in compPwr and execRunTime
+      val compPerf = execRunTime.map(p => (p._1, compPwr.find(_._1 == p._1).get._2 / p._2))
+      logInfo("Observed computation power: " + compPerf.mkString(","))
       val pwrr = compPwr.find(_._1 == weakid).get._2 / compPwr.map(_._2).sum
-      val prfr = 1 / compPerf.find(_._1 == weakid).get._2 / compPerf.map(1 / _._2).sum
+      val prfr = compPerf.find(_._1 == weakid).get._2 / compPerf.map(_._2).sum
       if (prfr - pwrr > 0.1) {
         (executorToHost.getOrDefault(weakid, ""), 2)
       } else if (prfr - pwrr > 0.01) {

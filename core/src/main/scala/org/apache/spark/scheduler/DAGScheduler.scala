@@ -211,7 +211,7 @@ class DAGScheduler(
   taskScheduler.setDAGScheduler(this)
 
   /** pick the longest stage, report the avg task finish time of the executors */
-  def reportExecutorPerf: Array[(String, Double)] = {
+  def reportExecutorRunTime: Array[(String, Double)] = {
     var stageid = -1
     var longestFinTime: Long = 0
     for (key <- historicalStageInfo.keys) {
