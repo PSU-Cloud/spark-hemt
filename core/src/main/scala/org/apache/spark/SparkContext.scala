@@ -381,14 +381,19 @@ class SparkContext(config: SparkConf) extends Logging {
    * each executor. Return Array[(executorId, division)].
    */
   def workloadDiv(pi: Double): Array[(String, Double)] = {
-    var executors = Array[(Int, Double, String)]()
+    var executors = Array[(Double, Double, String)]()
     for (k <- executorTokens.keySet().toArray()) {
-      executors = executors :+ Tuple3(executorTokens.getOrDefault(k, 0),
+      executors = executors :+ Tuple3(
+        if (1.0 - executorBase.getOrDefault(k, 1.0) > 0) {
+          executorTokens.getOrDefault(k, 0) / (1.0 - executorBase.getOrDefault(k, 1.0))
+        } else {
+          0
+        },
         executorBase.getOrDefault(k, 1.0), k.asInstanceOf[String])
     }
     executors.sortBy(_._1)
 
-    def solvePieceWise(start: Int, passover: Double, tango: Double): Double = {
+    def solvePieceWise(start: Double, passover: Double, tango: Double): Double = {
       val slope: Double = executors.filter(_._1 <= start).map(_._2).sum +
         executors.filter(_._1 > start).map(_._2).sum
       val newIndex = executors.count (_._1 <= start)
