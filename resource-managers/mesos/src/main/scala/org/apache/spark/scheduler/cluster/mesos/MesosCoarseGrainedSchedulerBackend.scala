@@ -369,11 +369,8 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
       logDebug(s"Received ${offers.size} resource offers.")
 
       val (matchedOffers, unmatchedOffers) = offers.asScala.partition { offer =>
-        if (offer.hasSuggestedFudge()) {
-          sc.dynamicFudge = offer.getSuggestedFudge()
-        }
-        if (offer.hasWeakHost()) {
-          sc.weakHost = offer.getWeakHost()
+        for (nodeInfo <- offer.getNinfosList.asScala) {
+          sc.hostAdjust.put(nodeInfo.getName, nodeInfo.getFactor)
         }
         val offerAttributes = toAttributeMap(offer.getAttributesList)
         matchesAttributeRequirements(slaveOfferConstraints, offerAttributes)
@@ -729,7 +726,7 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
       val execs = sc.executorCompPwr
       if (execs.length > 1) {
         val sugg = sc.suggestedPart
-        schedulerDriver.stop(false, sugg._2, sugg._1)
+        schedulerDriver.stop(false, sugg.map(_._1), sugg.map(_._2))
       } else {
         schedulerDriver.stop()
       }

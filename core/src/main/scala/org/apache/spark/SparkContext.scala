@@ -23,8 +23,8 @@ import java.util.{Arrays, Locale, Properties, ServiceLoader, UUID}
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentMap}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
 
+import scala.collection.{mutable, Map}
 import scala.collection.JavaConverters._
-import scala.collection.Map
 import scala.collection.generic.Growable
 import scala.collection.mutable.HashMap
 import scala.language.implicitConversions
@@ -354,9 +354,8 @@ class SparkContext(config: SparkConf) extends Logging {
 
   val executorBase: ConcurrentMap[String, Double] = new ConcurrentHashMap[String, Double]()
 
-  var dynamicFudge: Double = 0.0
+  val hostAdjust: HashMap[String, Double] = new mutable.HashMap[String, Double]()
 
-  var weakHost: String = ""
   /**
    * Calculating computation power of the executors.
    * TODO(yuquanshan): use this function to simplify updatePrefLoc in ParallelCollectionRDD
@@ -417,11 +416,8 @@ class SparkContext(config: SparkConf) extends Logging {
       } else {
         exec._1 + (finTime - exec._1) * exec._2
       }
-      var delta: Double = 0.0
-      if (executorToHost.getOrDefault(exec._3, "") == weakHost) {
-        delta = dynamicFudge * pi / (1.0 - tempw / pi - dynamicFudge)
-      }
-      (exec._3, tempw + delta)
+      var factor: Double = hostAdjust.getOrElse(executorToHost.getOrDefault(exec._3, ""), 1.0)
+      (exec._3, tempw * factor)
     }
     weights.sortBy(_._2)
   }
@@ -437,52 +433,22 @@ class SparkContext(config: SparkConf) extends Logging {
    * After the job finishes, indicate whether we should adjust way of partitioning data.
    * Return (new weakHost, trend for future dynamicFudge)
    */
-  def suggestedPart: (String, Int) = {
+  def suggestedPart: Array[(String, Double)] = {
     val execRunTime = dagScheduler.reportExecutorRunTime
-    // the executor id of interest, if weakHost is empty, pick the slowest one, or non-empty,
-    // meaning it's inherited from Mesos, if the weakHost is hosting one executor of this job
-    // then the executor on weakHost is the one of interest, o.w., pick the slowest one.
-    val weakid = if (execRunTime.length == 0) {
-      ""
-    } else if (weakHost == "") {
-        execRunTime(execRunTime.length - 1)._1
-    } else {
-      var wid = ""
-      for (eid <- executorToHost.keySet().toArray) {
-        if (executorToHost.getOrDefault(eid, "") == weakHost) {
-          wid = eid.asInstanceOf[String]
-        }
-      }
-      if (wid == "") {
-        execRunTime(execRunTime.length - 1)._1
-      } else {
-        wid
-      }
-    }
 
+    // Estimated computation power (reflected by the division assigned to that executor)
     val compPwr = workloadDiv(executorTokens.size())
-    logInfo("Idea computation power: " + compPwr.mkString(",") + "; observed executor run time: "
-      + execRunTime.mkString(",") + "; Executor to apply fudge factor: " + weakid)
-    if (compPwr.length > 1 && execRunTime.length > 1) {
-      // TODO(yuquanshan): throw exception if executorids don't match in compPwr and execRunTime
-      val compPerf = execRunTime.map(p => (p._1, compPwr.find(_._1 == p._1).get._2 / p._2))
-      logInfo("Observed computation power: " + compPerf.mkString(","))
-      val pwrr = compPwr.find(_._1 == weakid).get._2 / compPwr.map(_._2).sum
-      val prfr = compPerf.find(_._1 == weakid).get._2 / compPerf.map(_._2).sum
-      if (prfr - pwrr > 0.1) {
-        (executorToHost.getOrDefault(weakid, ""), 2)
-      } else if (prfr - pwrr > 0.01) {
-        (executorToHost.getOrDefault(weakid, ""), 1)
-      } else if (prfr - pwrr < -0.1) {
-        (executorToHost.getOrDefault(weakid, ""), -2)
-      } else if (prfr - pwrr < -0.01) {
-        (executorToHost.getOrDefault(weakid, ""), -1)
-      } else {
-        (executorToHost.getOrDefault(weakid, ""), 0)
-      }
-    } else {
-      ("", 0)
-    }
+
+    // Observed computation power of a node is the fraction divided by the executor run time
+    // in execRunTime.
+    // TODO(yuquanshan): currently use compPwr.find(), O(n^2) complexity, can make it quicker.
+    val obsvCompPwr = compPwr.map(p => p._2 / execRunTime.find(_._1 == p._1).get._2)
+
+    // normalized computation power, both estimated and observed.
+    val normCompPwr = compPwr.map(_._2 / compPwr.map(_._2).sum)
+    val normObsvCompPwr = obsvCompPwr.map(_ / obsvCompPwr.sum)
+
+    compPwr.map(_._1).zip(normObsvCompPwr.zip(normCompPwr).map(p => p._1 / p._2))
   }
 
   // Thread Local variable that can be used by users to pass information down the stack
