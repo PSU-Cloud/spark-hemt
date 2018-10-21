@@ -356,7 +356,8 @@ class SparkContext(config: SparkConf) extends Logging {
 
   val hostAdjust: HashMap[String, Double] = new mutable.HashMap[String, Double]()
 
-  val hostAdjustARFactor: Double = _conf.getDouble("spark.debug.arf", 1.0)
+  def hostAdjustARFactor: Double = _conf.getDouble("spark.debug.arf", 1.0)
+
   /**
    * Calculating computation power of the executors.
    * TODO(yuquanshan): use this function to simplify updatePrefLoc in ParallelCollectionRDD
