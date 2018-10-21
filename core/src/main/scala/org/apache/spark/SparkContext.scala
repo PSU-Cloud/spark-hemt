@@ -453,7 +453,7 @@ class SparkContext(config: SparkConf) extends Logging {
     compPwr.map(_._1).zip(normObsvCompPwr.zip(normCompPwr).map(
       p => p._1 / p._2)).map(p =>
           (
-            p._1,
+            executorToHost.getOrDefault(p._1, ""),
             (1 + hostAdjustARFactor * (p._2 - 1)) * hostAdjust.getOrElse(
               executorToHost.getOrDefault(p._1, ""), 1.0)
           )
