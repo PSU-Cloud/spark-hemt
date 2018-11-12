@@ -418,7 +418,7 @@ class SparkContext(config: SparkConf) extends Logging {
       } else {
         exec._1 + (finTime - exec._1) * exec._2
       }
-      var factor: Double = hostAdjust.getOrElse(executorToHost.getOrDefault(exec._3, ""), 1.0)
+      val factor: Double = hostAdjust.getOrElse(executorToHost.getOrDefault(exec._3, ""), 1.0)
       (exec._3, tempw * factor)
     }
     weights.sortBy(_._2)
@@ -447,14 +447,18 @@ class SparkContext(config: SparkConf) extends Logging {
     val obsvCompPwr = compPwr.map(p => p._2 / execRunTime.find(_._1 == p._1).get._2)
 
     // normalized computation power, both estimated and observed.
-    val normCompPwr = compPwr.map(_._2 / compPwr.map(_._2).sum)
+    val vcompPwr = compPwr.map { p =>
+      val factor: Double = hostAdjust.getOrElse(executorToHost.getOrDefault(p._1, ""), 1.0)
+      (p._1, p._2 / factor) // unadjusted computation power
+    }
+    val normCompPwr = vcompPwr.map(_._2 / vcompPwr.map(_._2).sum)
     val normObsvCompPwr = obsvCompPwr.map(_ / obsvCompPwr.sum)
 
     compPwr.map(_._1).zip(normObsvCompPwr.zip(normCompPwr).map(
       p => p._1 / p._2)).map(p =>
           (
             executorToHost.getOrDefault(p._1, ""),
-            (1 + hostAdjustARFactor * (p._2 - 1)) * hostAdjust.getOrElse(
+            hostAdjustARFactor * p._2 + (1 - hostAdjustARFactor) * hostAdjust.getOrElse(
               executorToHost.getOrDefault(p._1, ""), 1.0)
           )
       )
