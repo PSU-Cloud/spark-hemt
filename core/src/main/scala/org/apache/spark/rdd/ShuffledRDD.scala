@@ -137,30 +137,11 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
   private def updatePrefLoc(): Unit = {
     val sc = context
 
-    // create an ArrayList of class ExecutorPair
-    // TODO(yuquanshan): should rename "tokens" to comppower
-    case class ExecutorPair(val executorId: String, val tokens: Double)
-    var availableArray = Array[ExecutorPair]()
-    val bar = sc.executorTokens.values().toArray(
-      new Array[Integer](sc.executorTokens.size())).map(_.toInt).reduceLeft(math.max) + 1
-    for (exeID <- sc.executorTokens.keySet().toArray()) {
-      val exeIDasString = exeID.asInstanceOf[String]
-      availableArray = availableArray :+ ExecutorPair(
-        exeIDasString,
-        math.max(0.0,
-          bar - sc.executorTokens.get(exeIDasString)) * sc.executorBase.get(exeIDasString)
-          + sc.executorTokens.get(exeIDasString))
-    }
-
-    // sort availabeArray in ascending order
-    object PairOrdering extends Ordering[ExecutorPair] {
-      def compare(a: ExecutorPair, b: ExecutorPair) = a.tokens compare b.tokens
-    }
-    Sorting.quickSort(availableArray)(PairOrdering)
+    val availableArray = sc.workloadDiv(sc.executorTokens.size())
 
     // after the array is sorted, assign each partition to an availabe executor
     for ((pair, partID) <- availableArray.zipWithIndex) {
-      val execID = pair.executorId
+      val execID = pair._1
       val execHost = executorLocationTag + s"${sc.executorToHost.get(execID)}_$execID"
       if (optLocationPrefs.contains(partID)) {
         optLocationPrefs = optLocationPrefs.updated(
@@ -169,6 +150,5 @@ class ShuffledRDD[K: ClassTag, V: ClassTag, C: ClassTag](
         optLocationPrefs += (partID -> Seq(execHost))
       }
     }
-
   }
 }

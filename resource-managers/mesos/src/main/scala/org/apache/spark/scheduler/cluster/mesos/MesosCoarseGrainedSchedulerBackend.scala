@@ -723,9 +723,8 @@ private[spark] class MesosCoarseGrainedSchedulerBackend(
     mesosExternalShuffleClient.foreach(_.close())
 
     if (schedulerDriver != null) {
-      val execs = sc.executorCompPwr
-      if (execs.length > 1) {
-        val sugg = sc.suggestedPart
+      val sugg = sc.suggestedPart
+      if (sugg.length > 1) {
         schedulerDriver.stop(false, sugg.map(_._1), sugg.map(_._2))
       } else {
         schedulerDriver.stop()

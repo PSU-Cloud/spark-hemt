@@ -359,38 +359,34 @@ class SparkContext(config: SparkConf) extends Logging {
   def hostAdjustARFactor: Double = _conf.getDouble("spark.debug.arf", 1.0)
 
   /**
-   * Calculating computation power of the executors.
-   * TODO(yuquanshan): use this function to simplify updatePrefLoc in ParallelCollectionRDD
-   * and HadoopRDD.
-   */
-  def executorCompPwr: Array[(String, Double)] = {
-    var res = Array[(String, Double)]()
-    val bar = executorTokens.values().toArray(
-      new Array[Integer](executorTokens.size())).map(_.toInt).reduceLeft(math.max) + 1
-    for (exeID <- executorTokens.keySet().toArray()) {
-      val exeIDasString = exeID.asInstanceOf[String]
-      res = res :+ Tuple2(exeIDasString,
-        math.max(0.0,
-          bar - executorTokens.get(exeIDasString)) * executorBase.get(exeIDasString)
-          + executorTokens.get(exeIDasString))
-    }
-    res.sortBy(_._2)
-  }
-
-  /**
    * Given total workload pi and executor parameters stored in the context. Find the division on
    * each executor. Return Array[(executorId, division)].
+   * The workload, pi, ideally should be the time to finish (secs) the current computation stage
+   * with an executor with full speed. However, currently, pi is usually set to be the number of
+   * executors (the choice has no reason. it can be any other positive number). It works fine
+   * when we either use containers to constantly limit CPU usage, or run experiments in a
+   * burstable cluster with two types of instances: the one with 0 CPU credit and the one with
+   * sufficient CPU credits.
+   * FFT: is there any way to know the desired workload pi a priori?
    */
   def workloadDiv(pi: Double): Array[(String, Double)] = {
     var executors = Array[(Double, Double, String)]()
-    for (k <- executorTokens.keySet().toArray()) {
+
+    // Make sure given current computation power of the executors, the workload pi can be finished.
+    // Otherwise, finTime would be Inf. In this case, we would rather throw an exception here
+    // instead of letting that disaster happen.
+    assert(executorBase.values().asScala.count(_ > 0) > 0
+      || executorTokens.values().asScala.sum >= pi,
+      s"The current executors are unable to compute $pi.")
+
+    for (k <- executorTokens.keySet().asScala) {
       executors = executors :+ Tuple3(
         if (1.0 - executorBase.getOrDefault(k, 1.0) > 0) {
           executorTokens.getOrDefault(k, 0) / (1.0 - executorBase.getOrDefault(k, 1.0))
         } else {
           0
         },
-        executorBase.getOrDefault(k, 1.0), k.asInstanceOf[String])
+        executorBase.getOrDefault(k, 1.0), k)
     }
     executors.sortBy(_._1)
 
